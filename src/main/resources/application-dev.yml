@@ -1,0 +1,7 @@
+fieldops:
+  seed:
+    enabled: true
+
+logging:
+  level:
+    com.fieldops: DEBUG
