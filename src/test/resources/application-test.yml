@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:16:///fieldops_test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+fieldops:
+  seed:
+    enabled: false
+  jwt:
+    secret: "dGhpc2lzYWRldm9ubHlmaWVsZG9wc2p3dHNpZ25pbmdrZXlub3Rmb3Jwcm9kdWN0aW9udXNlMTIzNDU2"
+    access-token-ttl-minutes: 30
+    refresh-token-ttl-minutes: 1440
+  storage:
+    evidence-dir: ./data/evidence-test
