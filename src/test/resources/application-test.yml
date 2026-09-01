@@ -2,6 +2,9 @@ spring:
   datasource:
     url: jdbc:tc:postgresql:16:///fieldops_test
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+    # O driver do Testcontainers ignora estas credenciais; ficam só para o binding do Spring.
+    username: test
+    password: test
   jpa:
     hibernate:
       ddl-auto: validate
@@ -12,7 +15,9 @@ fieldops:
   seed:
     enabled: false
   jwt:
-    secret: "dGhpc2lzYWRldm9ubHlmaWVsZG9wc2p3dHNpZ25pbmdrZXlub3Rmb3Jwcm9kdWN0aW9udXNlMTIzNDU2"
+    # Valor fixo e explicitamente inutilizável fora dos testes: eles precisam ser
+    # determinísticos e rodar em CI sem segredo de ambiente.
+    secret: "test-only-signing-key-never-used-by-any-real-deployment-0123456789"
     access-token-ttl-minutes: 30
     refresh-token-ttl-minutes: 1440
   storage:

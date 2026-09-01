@@ -1,6 +1,9 @@
 fieldops:
   seed:
     enabled: true
+    # Sem valor padrão: sem esta variável o seed não roda, e nenhuma conta de
+    # administrador com senha conhecida chega a existir.
+    password: ${FIELDOPS_SEED_PASSWORD:}
 
 logging:
   level:

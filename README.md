@@ -96,17 +96,20 @@ cd aplicativo-mobile && npm install && npm start
 > No Windows, o firewall costuma bloquear entrada nas portas **8080** e **8081**. Se o celular não
 > conectar no Expo Go, libere as duas para a rede privada.
 
-### Credenciais de desenvolvimento
+### Usuários de desenvolvimento
 
-Criadas pelo seed da API (apenas no perfil `dev`, com o banco vazio):
+O seed da API cria um usuário por papel — **apenas** no perfil `dev` e só com o banco vazio.
 
-| Perfil | E-mail | Senha | Usa |
-|---|---|---|---|
-| `ADMIN` | `admin@fieldops.local` | `Admin@12345` | Web |
-| `SUPERVISOR` | `supervisor@fieldops.local` | `Supervisor@123` | Web |
-| `TECHNICIAN` | `technician@fieldops.local` | `Technician@123` | **Mobile** |
-| `CLIENT_VIEWER` | `viewer@fieldops.local` | `Viewer@12345` | Web |
+**As senhas não estão neste repositório.** Todas vêm de `FIELDOPS_SEED_PASSWORD`, que você define no
+`.env` da API (veja `.env.example`). Sem essa variável o seed não roda, e nenhuma conta de
+administrador com senha conhecida chega a existir.
 
+| Perfil | E-mail | Usa |
+|---|---|---|
+| `ADMIN` | `admin@fieldops.local` | Web |
+| `SUPERVISOR` | `supervisor@fieldops.local` | Web |
+| `TECHNICIAN` | `technician@fieldops.local` | **Mobile** |
+| `CLIENT_VIEWER` | `viewer@fieldops.local` | Web |
 ### Identidade visual — FieldOps Precision System
 
 Web e mobile compartilham o mesmo sistema de design, de estética *Ultra-Modern Minimalism*:
@@ -139,13 +142,42 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21
 export PATH="$JAVA_HOME/bin:$PATH"
 ```
 
+## Configuração de segredos
+
+Nenhum segredo é versionado. Antes de subir qualquer coisa, crie o seu `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Preencha as três variáveis:
+
+| Variável | Para que serve |
+|---|---|
+| `FIELDOPS_JWT_SECRET` | Assina os JWT. **Mínimo de 64 caracteres**, exclusiva por ambiente. Gere com `openssl rand -base64 64` |
+| `FIELDOPS_DB_PASSWORD` | Senha do Postgres — lida tanto pelo `docker compose` (ao criar o banco) quanto pela aplicação (ao conectar) |
+| `FIELDOPS_SEED_PASSWORD` | Senha compartilhada pelos usuários de desenvolvimento criados pelo seed |
+
+A aplicação **recusa subir** sem `FIELDOPS_JWT_SECRET`, ou com uma chave curta demais, dizendo em uma
+frase o que fazer. É deliberado: uma chave previsível permite forjar um token válido para qualquer
+usuário, inclusive administrador — falhar na partida é melhor do que rodar inseguro.
+
+Carregue as variáveis antes de executar. No bash:
+
+```bash
+set -a; source .env; set +a
+```
+
+> `.env` está no `.gitignore` e nunca deve ser versionado. Cada ambiente tem os seus próprios
+> segredos; nunca reaproveite os de desenvolvimento.
+
 ## Subindo o banco de dados
 
 ```bash
 docker compose up -d
 ```
 
-Sobe um Postgres 16 em `localhost:5433` (banco `fieldops`, usuário `fieldops`, senha `fieldops_dev_pw`
+Sobe um Postgres 16 em `localhost:5433` (banco e usuário `fieldops`; a senha vem de `FIELDOPS_DB_PASSWORD`
 — ver `docker-compose.yml`). As migrações Flyway (`src/main/resources/db/migration`) rodam
 automaticamente na subida da aplicação.
 
@@ -168,18 +200,23 @@ A API sobe em `http://localhost:8080`. Documentação interativa (Swagger UI) em
 ## Usuários de desenvolvimento (seed)
 
 Em ambiente `dev` (perfil ativo por padrão, ver `application-dev.yml`), na primeira subida com o
-banco vazio a aplicação cria automaticamente:
+banco vazio a aplicação cria um usuário por papel:
 
-| Papel | E-mail | Senha |
-|---|---|---|
-| ADMIN | `admin@fieldops.local` | `Admin@12345` |
-| SUPERVISOR | `supervisor@fieldops.local` | `Supervisor@123` |
-| TECHNICIAN | `technician@fieldops.local` | `Technician@123` |
-| CLIENT_VIEWER | `viewer@fieldops.local` | `Viewer@12345` |
+| Papel | E-mail |
+|---|---|
+| `ADMIN` | `admin@fieldops.local` |
+| `SUPERVISOR` | `supervisor@fieldops.local` |
+| `TECHNICIAN` | `technician@fieldops.local` |
+| `CLIENT_VIEWER` | `viewer@fieldops.local` |
 
-Além de 2 clientes, 2 locais e 2 equipamentos de exemplo. O seed é idempotente (só roda se não houver
-usuários) e pode ser desativado com `fieldops.seed.enabled=false`.
+Todos compartilham a senha definida em **`FIELDOPS_SEED_PASSWORD`** (veja `.env.example`). Não há
+senha padrão: sem essa variável o seed é ignorado, com aviso no log. É de propósito — uma senha
+embutida no código criaria contas de administrador com credencial conhecida por qualquer pessoa com
+acesso ao repositório, e bastaria o perfil `dev` ser habilitado por engano em um ambiente exposto
+para virar uma porta aberta.
 
+Além dos usuários, são criados 2 clientes, 2 locais e 2 equipamentos de exemplo. O seed é idempotente
+(só roda se não houver usuários) e pode ser desativado com `fieldops.seed.enabled=false`.
 ## Testes
 
 ```bash
@@ -236,3 +273,23 @@ Pontos abertos, para ninguém tropeçar neles achando que é regressão:
 | 5 | Evidência só vincula a uma resposta já persistida (`responseId`). O app mobile trabalha offline, quando essa resposta ainda não existe — um `inspectionItemId` no endpoint de evidência resolveria |
 | 6 | `GET /inspections` filtra por local, não por equipamento; o histórico de um ativo precisa ser refinado no cliente |
 | 7 | `rulesJson` é carregado e devolvido, mas nenhum schema é definido ou validado — o construtor de modelos ainda não escreve o campo |
+
+## Rotação de segredos
+
+Até 01/09/2026 a chave JWT, a senha do banco e as senhas do seed estavam **em texto claro no
+repositório** (`application.yml`, `docker-compose.yml`, `DevDataSeeder.java` e os READMEs). Foram
+removidas do código, mas **continuam no histórico do git** — remover um segredo do arquivo não o
+remove dos commits anteriores.
+
+Consequências práticas:
+
+- **A chave JWT antiga está queimada.** Já foi rotacionada aqui; qualquer ambiente que ainda a use
+  precisa de uma nova (`openssl rand -base64 64`). Trocá-la invalida todos os tokens emitidos, então
+  as sessões abertas precisam de novo login.
+- **Bancos já criados continuam com as senhas antigas.** O seed não recria usuários existentes, então
+  um banco de desenvolvimento anterior a essa mudança ainda aceita as senhas que estavam no README.
+  Para limpar: `docker compose down -v` e subir de novo (apaga os dados locais), ou trocar as senhas
+  pela interface administrativa.
+- **Os três repositórios são privados.** Foi o que limitou a exposição a quem já tem acesso. Se
+  algum deles for tornado público, reescrever o histórico (`git filter-repo`) passa a ser necessário,
+  além da rotação.

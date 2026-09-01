@@ -7,6 +7,7 @@ import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
@@ -25,9 +26,35 @@ public class JwtService {
     private final SecretKey key;
     private final JwtProperties properties;
 
+    /** HS512 exige chave de pelo menos 512 bits — 64 caracteres ASCII. */
+    private static final int MIN_SECRET_LENGTH = 64;
+
     public JwtService(JwtProperties properties) {
         this.properties = properties;
-        this.key = Keys.hmacShaKeyFor(properties.secret().getBytes());
+        this.key = Keys.hmacShaKeyFor(requireStrongSecret(properties.secret()));
+    }
+
+    /**
+     * Recusa a partida quando a chave de assinatura não foi configurada.
+     *
+     * <p>Um placeholder não resolvido (`${FIELDOPS_JWT_SECRET}`) chega aqui como
+     * texto literal, e uma chave fraca ou previsível permite forjar token para
+     * qualquer usuário, inclusive administrador. Falhar na subida, com a causa
+     * dita em uma frase, é preferível a subir uma aplicação insegura.
+     */
+    private static byte[] requireStrongSecret(String secret) {
+        if (secret == null || secret.isBlank() || secret.startsWith("${")) {
+            throw new IllegalStateException(
+                    "A variável de ambiente FIELDOPS_JWT_SECRET não está definida. "
+                            + "Copie .env.example para .env e gere uma chave com: openssl rand -base64 64");
+        }
+        byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length < MIN_SECRET_LENGTH) {
+            throw new IllegalStateException(
+                    "FIELDOPS_JWT_SECRET tem " + bytes.length + " bytes; o mínimo para HS512 é "
+                            + MIN_SECRET_LENGTH + ". Gere uma nova com: openssl rand -base64 64");
+        }
+        return bytes;
     }
 
     public String generateAccessToken(FieldOpsUserDetails principal) {

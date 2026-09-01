@@ -48,15 +48,22 @@ public class DevDataSeeder implements CommandLineRunner {
         if (!seedProperties.enabled()) {
             return;
         }
+        if (!seedProperties.hasPassword()) {
+            log.warn("Seed data skipped: set FIELDOPS_SEED_PASSWORD to create the development users.");
+            return;
+        }
         if (userRepository.count() > 0) {
             log.info("Seed data skipped: users already exist");
             return;
         }
 
-        User admin = newUser("FieldOps Admin", "admin@fieldops.local", "Admin@12345", Role.ADMIN, "+55 11 90000-0001");
-        User supervisor = newUser("Sara Supervisor", "supervisor@fieldops.local", "Supervisor@123", Role.SUPERVISOR, "+55 11 90000-0002");
-        User technician = newUser("Tom Technician", "technician@fieldops.local", "Technician@123", Role.TECHNICIAN, "+55 11 90000-0003");
-        newUser("Carla Viewer", "viewer@fieldops.local", "Viewer@12345", Role.CLIENT_VIEWER, "+55 11 90000-0004");
+        // Todos os usuários de desenvolvimento compartilham a senha configurada:
+        // são contas descartáveis de um banco local, não identidades reais.
+        final String password = seedProperties.password();
+        User admin = newUser("FieldOps Admin", "admin@fieldops.local", password, Role.ADMIN, "+55 11 90000-0001");
+        User supervisor = newUser("Sara Supervisor", "supervisor@fieldops.local", password, Role.SUPERVISOR, "+55 11 90000-0002");
+        User technician = newUser("Tom Technician", "technician@fieldops.local", password, Role.TECHNICIAN, "+55 11 90000-0003");
+        newUser("Carla Viewer", "viewer@fieldops.local", password, Role.CLIENT_VIEWER, "+55 11 90000-0004");
         userRepository.saveAll(java.util.List.of(admin, supervisor, technician));
 
         Client acme = newClient("Acme Manufacturing", "Acme Industria e Comercio Ltda", "acme@example.com");
@@ -71,8 +78,8 @@ public class DevDataSeeder implements CommandLineRunner {
         Equipment forklift = newEquipment(globexHub, "Forklift F3", "FL-003", "QR-FL-003");
         equipmentRepository.saveAll(java.util.List.of(compressor, forklift));
 
-        log.info("Seed data created: 4 users, 2 clients, 2 sites, 2 equipment. " +
-                "Login as admin@fieldops.local / Admin@12345 (see README for all credentials).");
+        log.info("Seed data created: 4 users, 2 clients, 2 sites, 2 equipment. "
+                + "Log in as admin@fieldops.local with the configured seed password.");
     }
 
     private User newUser(String name, String email, String rawPassword, Role role, String phone) {

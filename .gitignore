@@ -5,3 +5,6 @@ data/
 *.iml
 .vscode/
 .DS_Store
+
+# Segredos locais — nunca versionar
+.env

@@ -6,7 +6,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5433/fieldops
     username: fieldops
-    password: fieldops_dev_pw
+    password: ${FIELDOPS_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -32,7 +32,7 @@ server:
 
 fieldops:
   jwt:
-    secret: "dGhpc2lzYWRldm9ubHlmaWVsZG9wc2p3dHNpZ25pbmdrZXlub3Rmb3Jwcm9kdWN0aW9udXNlMTIzNDU2"
+    secret: ${FIELDOPS_JWT_SECRET}
     access-token-ttl-minutes: 30
     refresh-token-ttl-minutes: 1440
   storage:
