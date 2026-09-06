@@ -50,6 +50,8 @@ public class S3EvidenceStorageService implements EvidenceStorage {
             var response = s3Client.getObject(GetObjectRequest.builder()
                     .bucket(properties.bucket()).key(storageKey).build());
             return new StoredObject(response.readAllBytes(), response.response().contentType());
+        } catch (IOException e) {
+            throw new BusinessRuleException("FILE_STORAGE_ERROR", "Could not read the stored evidence");
         } catch (RuntimeException e) {
             throw new BusinessRuleException("FILE_NOT_FOUND", "Evidence content is no longer available");
         }
