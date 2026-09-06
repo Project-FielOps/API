@@ -11,6 +11,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fieldops.shared.dto.ApiError;
+import org.springframework.http.MediaType;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -22,6 +25,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
+    private final ObjectMapper objectMapper;
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
@@ -40,8 +44,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 var authToken = new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+                if (principal.getUser().isMustChangePassword() && !isPasswordChangeAllowed(request)) {
+                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                    objectMapper.writeValue(response.getWriter(), ApiError.of(403, "Forbidden",
+                            "PASSWORD_CHANGE_REQUIRED", "Password change is required before using this resource",
+                            request.getRequestURI()));
+                    return;
+                }
             }
         }
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isPasswordChangeAllowed(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return path.equals("/api/v1/auth/change-password") || path.equals("/api/v1/auth/me")
+                || path.equals("/api/v1/auth/logout") || path.equals("/api/v1/auth/refresh");
     }
 }

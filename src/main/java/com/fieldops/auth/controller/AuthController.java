@@ -5,6 +5,9 @@ import com.fieldops.auth.dto.LoginRequest;
 import com.fieldops.auth.dto.RefreshRequest;
 import com.fieldops.auth.dto.ChangePasswordRequest;
 import com.fieldops.auth.dto.TokenResponse;
+import com.fieldops.auth.dto.ForgotPasswordRequest;
+import com.fieldops.auth.dto.PasswordRecoveryResponse;
+import com.fieldops.auth.dto.ResetPasswordRequest;
 import com.fieldops.auth.security.FieldOpsUserDetails;
 import com.fieldops.user.dto.UserResponse;
 import com.fieldops.user.mapper.UserMapper;
@@ -35,6 +38,19 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest request) {
         authService.logout(request.refreshToken());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<PasswordRecoveryResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request,
+                                                                    jakarta.servlet.http.HttpServletRequest httpRequest) {
+        authService.requestPasswordReset(request.email(), httpRequest.getRemoteAddr());
+        return ResponseEntity.accepted().body(new PasswordRecoveryResponse(AuthService.PASSWORD_RECOVERY_MESSAGE));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
         return ResponseEntity.noContent().build();
     }
 

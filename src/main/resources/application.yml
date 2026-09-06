@@ -43,6 +43,11 @@ fieldops:
     evidence-dir: ./data/evidence
     bucket: ${FIELDOPS_STORAGE_BUCKET:}
     region: ${AWS_REGION:}
+  mail:
+    provider: ${FIELDOPS_MAIL_PROVIDER:ses}
+    from: ${FIELDOPS_MAIL_FROM:}
+    password-reset-url: ${FIELDOPS_PASSWORD_RESET_URL:}
+    region: ${AWS_REGION:}
 
 springdoc:
   swagger-ui:

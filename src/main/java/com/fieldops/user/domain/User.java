@@ -36,6 +36,9 @@ public class User extends BaseEntity {
 
     private String phone;
 
+    @Column(nullable = false)
+    private boolean mustChangePassword;
+
     public boolean isActive() {
         return status == UserStatus.ACTIVE;
     }

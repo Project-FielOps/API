@@ -4,6 +4,10 @@ import com.fieldops.support.IntegrationTest;
 import com.fieldops.support.TestUsers;
 import com.fieldops.user.domain.Role;
 import com.fieldops.user.domain.User;
+import com.fieldops.user.repository.UserRepository;
+import com.fieldops.auth.application.EmailService;
+import org.mockito.ArgumentCaptor;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -21,6 +25,12 @@ class AuthenticationTest extends IntegrationTest {
 
     @Autowired
     private TestUsers testUsers;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @MockBean
+    private EmailService emailService;
 
     @Test
     void loginWithValidCredentialsReturnsTokens() throws Exception {
@@ -200,6 +210,64 @@ class AuthenticationTest extends IntegrationTest {
                         .contentType("application/json")
                         .content("{\"refreshToken\":\"%s\"}".formatted(refreshToken)))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void forgotPasswordHasSameGenericResponseForKnownAndUnknownEmail() throws Exception {
+        testUsers.create("reset-known@fieldops.local", Role.ADMIN);
+        String known = mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType("application/json")
+                        .content("{\"email\":\"RESET-KNOWN@fieldops.local\"}"))
+                .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
+        String unknown = mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType("application/json")
+                        .content("{\"email\":\"missing@fieldops.local\"}"))
+                .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
+        org.junit.jupiter.api.Assertions.assertEquals(known, unknown);
+        org.mockito.Mockito.verify(emailService).sendPasswordResetEmail(
+                org.mockito.ArgumentMatchers.eq("reset-known@fieldops.local"), org.mockito.ArgumentMatchers.contains("token="));
+    }
+
+    @Test
+    void resetPasswordConsumesTokenAndRevokesRefreshSession() throws Exception {
+        User user = testUsers.create("reset-flow@fieldops.local", Role.ADMIN);
+        String loginBody = mockMvc.perform(post("/api/v1/auth/login").contentType("application/json")
+                        .content("{\"email\":\"reset-flow@fieldops.local\",\"password\":\"%s\"}".formatted(TestUsers.RAW_PASSWORD)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String refresh = objectMapper.readTree(loginBody).get("refreshToken").asText();
+        mockMvc.perform(post("/api/v1/auth/forgot-password").contentType("application/json")
+                        .content("{\"email\":\"reset-flow@fieldops.local\"}"))
+                .andExpect(status().isAccepted());
+        ArgumentCaptor<String> url = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(emailService).sendPasswordResetEmail(org.mockito.ArgumentMatchers.eq(user.getEmail()), url.capture());
+        String token = url.getValue().substring(url.getValue().indexOf("token=") + 6);
+        mockMvc.perform(post("/api/v1/auth/reset-password").contentType("application/json")
+                        .content("{\"token\":\"%s\",\"newPassword\":\"NewPassword@123\"}".formatted(token)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/v1/auth/refresh").contentType("application/json")
+                        .content("{\"refreshToken\":\"%s\"}".formatted(refresh)))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/auth/reset-password").contentType("application/json")
+                        .content("{\"token\":\"%s\",\"newPassword\":\"AnotherPassword@123\"}".formatted(token)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void temporaryPasswordIsReportedAndBlocksNormalResourcesUntilChanged() throws Exception {
+        User user = testUsers.create("temporary@fieldops.local", Role.ADMIN);
+        user.setMustChangePassword(true);
+        userRepository.save(user);
+        String body = mockMvc.perform(post("/api/v1/auth/login").contentType("application/json")
+                        .content("{\"email\":\"temporary@fieldops.local\",\"password\":\"%s\"}".formatted(TestUsers.RAW_PASSWORD)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String access = objectMapper.readTree(body).get("accessToken").asText();
+        org.junit.jupiter.api.Assertions.assertTrue(objectMapper.readTree(body).get("mustChangePassword").asBoolean());
+        mockMvc.perform(get("/api/v1/clients").header("Authorization", "Bearer " + access))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PASSWORD_CHANGE_REQUIRED"));
+        mockMvc.perform(post("/api/v1/auth/change-password").header("Authorization", "Bearer " + access)
+                        .contentType("application/json")
+                        .content("{\"currentPassword\":\"%s\",\"newPassword\":\"ChangedPassword@123\"}".formatted(TestUsers.RAW_PASSWORD)))
+                .andExpect(status().isNoContent());
     }
 
     private String login(String email) throws Exception {

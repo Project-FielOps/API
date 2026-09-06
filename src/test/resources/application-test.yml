@@ -26,3 +26,8 @@ fieldops:
   security:
     cors:
       allowed-origins: http://localhost:4200
+  mail:
+    provider: noop
+    from: no-reply@test.fieldops.local
+    password-reset-url: http://localhost:4200/reset-password
+    region: us-east-1

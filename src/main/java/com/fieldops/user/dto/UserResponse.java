@@ -16,5 +16,6 @@ public record UserResponse(
         Instant createdAt,
         Instant updatedAt,
         Long version
+        , boolean mustChangePassword
 ) {
 }

@@ -36,6 +36,7 @@ public class UserService {
         user.setRole(request.role());
         user.setPhone(request.phone());
         user.setStatus(UserStatus.ACTIVE);
+        user.setMustChangePassword(request.temporaryPassword());
         return userRepository.save(user);
     }
 
