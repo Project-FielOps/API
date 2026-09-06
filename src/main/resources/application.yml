@@ -36,7 +36,10 @@ fieldops:
     access-token-ttl-minutes: 30
     refresh-token-ttl-minutes: 1440
   storage:
+    mode: ${FIELDOPS_STORAGE_MODE:local}
     evidence-dir: ./data/evidence
+    bucket: ${FIELDOPS_STORAGE_BUCKET:}
+    region: ${AWS_REGION:}
 
 springdoc:
   swagger-ui:

@@ -36,7 +36,7 @@ public class EvidenceService {
 
     private final EvidenceRepository evidenceRepository;
     private final InspectionResponseRepository responseRepository;
-    private final FileStorageService fileStorageService;
+    private final EvidenceStorage evidenceStorage;
     private final AuditService auditService;
     private final NonConformityRepository nonConformityRepository;
 
@@ -72,7 +72,7 @@ public class EvidenceService {
             }
         }
 
-        FileStorageService.StoredFile stored = fileStorageService.store(inspection.getId(), file);
+        EvidenceStorage.StoredFile stored = evidenceStorage.store(inspection.getId(), file);
 
         Evidence evidence = new Evidence();
         evidence.setInspection(inspection);
@@ -116,7 +116,7 @@ public class EvidenceService {
         if (actor.getRole() != Role.TECHNICIAN || !inspection.getTechnician().getId().equals(actor.getId())) {
             throw new ForbiddenOperationException("Only the assigned technician can remove their own evidence");
         }
-        fileStorageService.delete(evidence.getStorageKey());
+        evidenceStorage.delete(evidence.getStorageKey());
         evidenceRepository.delete(evidence);
         auditService.record(inspection.getId(), actor.getId(), "EVIDENCE_REMOVED", "Evidence", id);
     }

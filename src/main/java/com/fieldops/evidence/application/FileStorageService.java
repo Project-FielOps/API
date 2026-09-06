@@ -2,7 +2,6 @@ package com.fieldops.evidence.application;
 
 import com.fieldops.shared.exception.BusinessRuleException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -18,16 +17,13 @@ import java.util.UUID;
  * Stores evidence files on local disk under a configurable root directory, per spec 10.2's
  * "arquivos fora do banco relacional" principle - the DB keeps only metadata + storage key.
  */
-@Service
 @RequiredArgsConstructor
-public class FileStorageService {
+public class FileStorageService implements EvidenceStorage {
 
     private final EvidenceStorageProperties properties;
 
-    public record StoredFile(String storageKey, long sizeBytes, String checksum) {
-    }
-
-    public StoredFile store(UUID inspectionId, MultipartFile file) {
+    @Override
+    public EvidenceStorage.StoredFile store(UUID inspectionId, MultipartFile file) {
         try {
             Path root = Path.of(properties.evidenceDir()).toAbsolutePath().normalize();
             Path dir = root.resolve(inspectionId.toString());
@@ -40,12 +36,13 @@ public class FileStorageService {
             }
             Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
             String checksum = checksum(target);
-            return new StoredFile(storageKey, Files.size(target), checksum);
+            return new EvidenceStorage.StoredFile(storageKey, Files.size(target), checksum);
         } catch (IOException e) {
             throw new BusinessRuleException("FILE_STORAGE_ERROR", "Could not store the uploaded file: " + e.getMessage());
         }
     }
 
+    @Override
     public void delete(String storageKey) {
         try {
             Path root = Path.of(properties.evidenceDir()).toAbsolutePath().normalize();
