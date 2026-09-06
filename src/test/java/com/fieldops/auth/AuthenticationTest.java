@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItem;
@@ -42,14 +43,33 @@ class AuthenticationTest extends IntegrationTest {
 
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType("application/json")
+                        .header("X-Request-ID", "qa-login-42")
                         .content("""
                                 {"email":"auth-badpw@fieldops.local","password":"wrong-password"}
                                 """))
                 .andExpect(status().isUnauthorized())
+                .andExpect(header().string("X-Request-ID", "qa-login-42"))
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.code").isNotEmpty())
                 .andExpect(jsonPath("$.timestamp").isNotEmpty())
+                .andExpect(jsonPath("$.requestId").value("qa-login-42"))
                 .andExpect(jsonPath("$.path").value("/api/v1/auth/login"));
+    }
+
+    @Test
+    void invalidRequestIdIsReplacedWithSafeCorrelationId() throws Exception {
+        mockMvc.perform(get("/api/v1/clients").header("X-Request-ID", "invalid id"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().exists("X-Request-ID"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
+    }
+
+    @Test
+    void healthEndpointIsPublicAndReturnsCorrelationId() throws Exception {
+        mockMvc.perform(get("/actuator/health").header("X-Request-ID", "qa-health-7"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Request-ID", "qa-health-7"))
+                .andExpect(jsonPath("$.status").value("UP"));
     }
 
     @Test

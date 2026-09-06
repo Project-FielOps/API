@@ -6,5 +6,7 @@ fieldops:
     password: ${FIELDOPS_SEED_PASSWORD:}
 
 logging:
+  pattern:
+    level: "%5p [requestId:%X{requestId}]"
   level:
     com.fieldops: DEBUG

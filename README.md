@@ -266,7 +266,7 @@ Pontos abertos, para ninguém tropeçar neles achando que é regressão:
 
 | # | Situação |
 |---|---|
-| 1 | `/actuator/health` responde **500** — o `application.yml` expõe `health,info`, mas `spring-boot-starter-actuator` não está no `pom.xml`. A rota não existe e cai no handler global de erro |
+| 1 | `/actuator/health` é público e retorna `UP`; a suíte de integração valida a rota e o header de correlação |
 | 2 | Não há wrapper Maven (`mvnw`); é preciso Maven 3.9+ instalado |
 | 3 | A especificação `docs/fieldops-spec.md`, citada acima, **não está versionada** neste repositório |
 | 4 | O seed **não cria inspeções**, e não há modelo publicado. Sem publicar um modelo e agendar uma inspeção para o técnico, o aplicativo mobile abre vazio |
