@@ -43,10 +43,28 @@ public class FileStorageService implements EvidenceStorage {
     }
 
     @Override
+    public EvidenceStorage.StoredObject read(String storageKey) {
+        try {
+            Path root = Path.of(properties.evidenceDir()).toAbsolutePath().normalize();
+            Path target = root.resolve(storageKey).normalize();
+            if (!target.startsWith(root) || !Files.exists(target)) {
+                throw new BusinessRuleException("FILE_NOT_FOUND", "Evidence content is no longer available");
+            }
+            return new EvidenceStorage.StoredObject(Files.readAllBytes(target), detectContentType(storageKey));
+        } catch (IOException e) {
+            throw new BusinessRuleException("FILE_STORAGE_ERROR", "Could not read the stored evidence");
+        }
+    }
+
+    @Override
     public void delete(String storageKey) {
         try {
             Path root = Path.of(properties.evidenceDir()).toAbsolutePath().normalize();
-            Files.deleteIfExists(root.resolve(storageKey).normalize());
+            Path target = root.resolve(storageKey).normalize();
+            if (!target.startsWith(root)) {
+                return;
+            }
+            Files.deleteIfExists(target);
         } catch (IOException e) {
             // best-effort: metadata deletion/blocking is what the spec requires; ignore disk errors here
         }
@@ -66,5 +84,13 @@ public class FileStorageService implements EvidenceStorage {
         } catch (NoSuchAlgorithmException e) {
             return "";
         }
+    }
+
+    private String detectContentType(String storageKey) {
+        String lower = storageKey.toLowerCase();
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".pdf")) return "application/pdf";
+        return "application/octet-stream";
     }
 }

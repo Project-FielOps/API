@@ -5,6 +5,7 @@ import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 
 import java.io.IOException;
 import java.security.MessageDigest;
@@ -35,11 +36,22 @@ public class S3EvidenceStorageService implements EvidenceStorage {
             s3Client.putObject(PutObjectRequest.builder()
                             .bucket(properties.bucket())
                             .key(storageKey)
-                            .contentType(file.getContentType())
+                            .contentType(normalizeContentType(file.getContentType()))
                             .build(), RequestBody.fromBytes(content));
             return new StoredFile(storageKey, content.length, checksum(content));
         } catch (IOException e) {
             throw new BusinessRuleException("FILE_STORAGE_ERROR", "Could not read the uploaded file: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public StoredObject read(String storageKey) {
+        try {
+            var response = s3Client.getObject(GetObjectRequest.builder()
+                    .bucket(properties.bucket()).key(storageKey).build());
+            return new StoredObject(response.readAllBytes(), response.response().contentType());
+        } catch (RuntimeException e) {
+            throw new BusinessRuleException("FILE_NOT_FOUND", "Evidence content is no longer available");
         }
     }
 
@@ -60,5 +72,9 @@ public class S3EvidenceStorageService implements EvidenceStorage {
         } catch (NoSuchAlgorithmException e) {
             return "";
         }
+    }
+
+    private String normalizeContentType(String contentType) {
+        return "image/jpg".equalsIgnoreCase(contentType) ? "image/jpeg" : contentType;
     }
 }
