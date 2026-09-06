@@ -11,6 +11,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 
 class AuthenticationTest extends IntegrationTest {
 
@@ -91,6 +95,32 @@ class AuthenticationTest extends IntegrationTest {
         String token = login(technician.getEmail());
 
         mockMvc.perform(get("/api/v1/users").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void supervisorCanListOnlyActiveTechniciansForAssignment() throws Exception {
+        User supervisor = testUsers.create("auth-assign-supervisor@fieldops.local", Role.SUPERVISOR);
+        testUsers.create("auth-assign-tech@fieldops.local", Role.TECHNICIAN);
+        testUsers.createInactive("auth-assign-inactive-tech@fieldops.local", Role.TECHNICIAN);
+        testUsers.create("auth-assign-other-supervisor@fieldops.local", Role.SUPERVISOR);
+        String token = login(supervisor.getEmail());
+
+        mockMvc.perform(get("/api/v1/users/assignable").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].email", hasItem("auth-assign-tech@fieldops.local")))
+                .andExpect(jsonPath("$.content[*].email", not(hasItem("auth-assign-inactive-tech@fieldops.local"))))
+                .andExpect(jsonPath("$.content[*].email", not(hasItem("auth-assign-other-supervisor@fieldops.local"))))
+                .andExpect(jsonPath("$.content[*].role", everyItem(is("TECHNICIAN"))))
+                .andExpect(jsonPath("$.content[*].status", everyItem(is("ACTIVE"))));
+    }
+
+    @Test
+    void technicianCannotListAssignableUsers() throws Exception {
+        User technician = testUsers.create("auth-assign-forbidden@fieldops.local", Role.TECHNICIAN);
+        String token = login(technician.getEmail());
+
+        mockMvc.perform(get("/api/v1/users/assignable").header("Authorization", "Bearer " + token))
                 .andExpect(status().isForbidden());
     }
 

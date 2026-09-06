@@ -56,6 +56,11 @@ public class UserService {
         return userRepository.findAll(pageable);
     }
 
+    @Transactional(readOnly = true)
+    public Page<User> listAssignableTechnicians(Pageable pageable) {
+        return userRepository.findByRoleAndStatus(Role.TECHNICIAN, UserStatus.ACTIVE, pageable);
+    }
+
     public User update(UUID id, UpdateUserRequest request) {
         User user = getById(id);
         user.setName(request.name());
