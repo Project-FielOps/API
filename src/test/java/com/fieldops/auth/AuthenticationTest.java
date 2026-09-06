@@ -124,6 +124,64 @@ class AuthenticationTest extends IntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void refreshRotatesSessionAndLogoutRevokesCurrentRefreshToken() throws Exception {
+        User user = testUsers.create("auth-refresh@fieldops.local", Role.ADMIN);
+        String loginBody = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType("application/json")
+                        .content("{\"email\":\"%s\",\"password\":\"%s\"}"
+                                .formatted(user.getEmail(), TestUsers.RAW_PASSWORD)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String refreshToken = objectMapper.readTree(loginBody).get("refreshToken").asText();
+
+        String refreshBody = mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content("{\"refreshToken\":\"%s\"}".formatted(refreshToken)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String rotatedToken = objectMapper.readTree(refreshBody).get("refreshToken").asText();
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content("{\"refreshToken\":\"%s\"}".formatted(refreshToken)))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .contentType("application/json")
+                        .content("{\"refreshToken\":\"%s\"}".formatted(rotatedToken)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content("{\"refreshToken\":\"%s\"}".formatted(rotatedToken)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void changingPasswordInvalidatesAllRefreshSessions() throws Exception {
+        User user = testUsers.create("auth-change-password@fieldops.local", Role.ADMIN);
+        String loginBody = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType("application/json")
+                        .content("{\"email\":\"%s\",\"password\":\"%s\"}"
+                                .formatted(user.getEmail(), TestUsers.RAW_PASSWORD)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String accessToken = objectMapper.readTree(loginBody).get("accessToken").asText();
+        String refreshToken = objectMapper.readTree(loginBody).get("refreshToken").asText();
+
+        mockMvc.perform(post("/api/v1/auth/change-password")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType("application/json")
+                        .content("{\"currentPassword\":\"%s\",\"newPassword\":\"NewPassword@123\"}"
+                                .formatted(TestUsers.RAW_PASSWORD)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content("{\"refreshToken\":\"%s\"}".formatted(refreshToken)))
+                .andExpect(status().isUnauthorized());
+    }
+
     private String login(String email) throws Exception {
         String body = mockMvc.perform(post("/api/v1/auth/login")
                         .contentType("application/json")

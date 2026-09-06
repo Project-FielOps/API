@@ -3,6 +3,7 @@ package com.fieldops.auth.controller;
 import com.fieldops.auth.application.AuthService;
 import com.fieldops.auth.dto.LoginRequest;
 import com.fieldops.auth.dto.RefreshRequest;
+import com.fieldops.auth.dto.ChangePasswordRequest;
 import com.fieldops.auth.dto.TokenResponse;
 import com.fieldops.auth.security.FieldOpsUserDetails;
 import com.fieldops.user.dto.UserResponse;
@@ -32,8 +33,15 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout() {
-        // Stateless JWT: the client discards its tokens. No server-side session to invalidate.
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest request) {
+        authService.logout(request.refreshToken());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request,
+                                                @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        authService.changePassword(principal, request);
         return ResponseEntity.noContent().build();
     }
 

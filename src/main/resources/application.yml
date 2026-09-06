@@ -31,6 +31,9 @@ server:
     include-message: always
 
 fieldops:
+  security:
+    cors:
+      allowed-origins: ${FIELDOPS_CORS_ALLOWED_ORIGINS:http://localhost:4200}
   jwt:
     secret: ${FIELDOPS_JWT_SECRET}
     access-token-ttl-minutes: 30

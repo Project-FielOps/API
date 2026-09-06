@@ -21,4 +21,8 @@ fieldops:
     access-token-ttl-minutes: 30
     refresh-token-ttl-minutes: 1440
   storage:
+    mode: local
     evidence-dir: ./data/evidence-test
+  security:
+    cors:
+      allowed-origins: http://localhost:4200
