@@ -198,16 +198,24 @@ public class TemplateService {
     }
 
     public TemplateItem updateItem(UUID templateId, UUID sectionId, UUID itemId, ItemUpsertRequest request) {
-        requireEditableSection(templateId, sectionId);
+        TemplateSection section = requireEditableSection(templateId, sectionId);
         TemplateItem item = itemRepository.findById(itemId).orElseThrow(() -> NotFoundException.of("TemplateItem", itemId));
+        requireItemInSection(item, section);
         applyItem(item, request);
         return itemRepository.save(item);
     }
 
     public void deleteItem(UUID templateId, UUID sectionId, UUID itemId) {
-        requireEditableSection(templateId, sectionId);
+        TemplateSection section = requireEditableSection(templateId, sectionId);
         TemplateItem item = itemRepository.findById(itemId).orElseThrow(() -> NotFoundException.of("TemplateItem", itemId));
+        requireItemInSection(item, section);
         itemRepository.delete(item);
+    }
+
+    private void requireItemInSection(TemplateItem item, TemplateSection section) {
+        if (!item.getSection().getId().equals(section.getId())) {
+            throw NotFoundException.of("TemplateItem", item.getId());
+        }
     }
 
     private void applyItem(TemplateItem item, ItemUpsertRequest request) {

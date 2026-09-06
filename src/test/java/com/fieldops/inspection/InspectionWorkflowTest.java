@@ -70,6 +70,7 @@ class InspectionWorkflowTest extends IntegrationTest {
 
         // RN-033: only the assigned technician may start the inspection.
         apiPost("/api/v1/inspections/%s/start".formatted(inspectionId), otherTechnicianToken, null, 403);
+        apiPost("/api/v1/inspections/%s/start".formatted(inspectionId), adminToken, null, 403);
 
         apiPost("/api/v1/inspections/%s/start".formatted(inspectionId), technicianToken, null, 200);
 
@@ -91,9 +92,10 @@ class InspectionWorkflowTest extends IntegrationTest {
                 "{\"inspectionItemId\":\"%s\",\"conformity\":\"CONFORMING\"}".formatted(requiredItemId), 200);
         apiPost("/api/v1/inspections/%s/submit".formatted(inspectionId), technicianToken, null, 200);
 
-        // RN-079: only the assigned supervisor (or admin) may begin the review.
+        // RN-079: only the assigned supervisor may begin the review.
         String otherSupervisorToken = login(otherSupervisor.getEmail());
         apiPost("/api/v1/inspections/%s/begin-review".formatted(inspectionId), otherSupervisorToken, null, 403);
+        apiPost("/api/v1/inspections/%s/begin-review".formatted(inspectionId), adminToken, null, 403);
 
         apiPost("/api/v1/inspections/%s/begin-review".formatted(inspectionId), supervisorToken, null, 200);
 
@@ -111,6 +113,9 @@ class InspectionWorkflowTest extends IntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals(1, reviews.size());
         org.junit.jupiter.api.Assertions.assertEquals("REJECTED", reviews.get(0).get("decision").asText());
 
+        // Correction requires an explicit REJECTED -> IN_PROGRESS transition.
+        apiPost("/api/v1/inspections/%s/submit".formatted(inspectionId), technicianToken, null, 422);
+        apiPost("/api/v1/inspections/%s/reopen-correction".formatted(inspectionId), technicianToken, null, 200);
         // Technician corrects and resubmits; supervisor approves on the second cycle.
         apiPost("/api/v1/inspections/%s/submit".formatted(inspectionId), technicianToken, null, 200);
         apiPost("/api/v1/inspections/%s/begin-review".formatted(inspectionId), supervisorToken, null, 200);

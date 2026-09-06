@@ -28,7 +28,7 @@ public class NonConformityController {
     private final ReviewMapper reviewMapper;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN','TECHNICIAN','SUPERVISOR')")
+    @PreAuthorize("hasRole('TECHNICIAN')")
     public ResponseEntity<NonConformityResponse> create(@PathVariable UUID inspectionId,
                                                          @Valid @RequestBody CreateNonConformityRequest request,
                                                          @AuthenticationPrincipal FieldOpsUserDetails principal) {
@@ -38,27 +38,46 @@ public class NonConformityController {
     }
 
     @GetMapping
-    public List<NonConformityResponse> list(@PathVariable UUID inspectionId) {
-        return nonConformityService.listByInspection(inspectionId).stream().map(reviewMapper::toResponse).toList();
+    public List<NonConformityResponse> list(@PathVariable UUID inspectionId,
+                                            @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        return nonConformityService.listByInspection(inspectionId, principal.getUser()).stream()
+                .map(reviewMapper::toResponse).toList();
     }
 
     @GetMapping("/{id}")
-    public NonConformityResponse get(@PathVariable UUID inspectionId, @PathVariable UUID id) {
-        return reviewMapper.toResponse(nonConformityService.getById(id));
+    public NonConformityResponse get(@PathVariable UUID inspectionId, @PathVariable UUID id,
+                                     @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        NonConformity nc = nonConformityService.getById(id);
+        if (!nc.getInspection().getId().equals(inspectionId)) {
+            throw com.fieldops.shared.exception.NotFoundException.of("NonConformity", id);
+        }
+        nonConformityService.requireReadAccess(nc, principal.getUser());
+        return reviewMapper.toResponse(nc);
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','TECHNICIAN','SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('TECHNICIAN','SUPERVISOR')")
     public NonConformityResponse update(@PathVariable UUID inspectionId, @PathVariable UUID id,
-                                         @Valid @RequestBody UpdateNonConformityRequest request) {
-        return reviewMapper.toResponse(nonConformityService.update(id, request));
+                                         @Valid @RequestBody UpdateNonConformityRequest request,
+                                         @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        ensurePathScope(inspectionId, id, principal);
+        return reviewMapper.toResponse(nonConformityService.update(id, request, principal.getUser()));
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
+    @PreAuthorize("hasRole('SUPERVISOR')")
     public NonConformityResponse updateStatus(@PathVariable UUID inspectionId, @PathVariable UUID id,
                                                @Valid @RequestBody UpdateNonConformityStatusRequest request,
                                                @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        ensurePathScope(inspectionId, id, principal);
         return reviewMapper.toResponse(nonConformityService.updateStatus(id, request.status(), principal.getUser()));
+    }
+
+    private void ensurePathScope(UUID inspectionId, UUID id, FieldOpsUserDetails principal) {
+        NonConformity nc = nonConformityService.getById(id);
+        if (!nc.getInspection().getId().equals(inspectionId)) {
+            throw com.fieldops.shared.exception.NotFoundException.of("NonConformity", id);
+        }
+        nonConformityService.requireReadAccess(nc, principal.getUser());
     }
 }

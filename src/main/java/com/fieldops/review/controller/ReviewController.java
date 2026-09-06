@@ -30,13 +30,13 @@ public class ReviewController {
     private final InspectionMapper inspectionMapper;
 
     @PostMapping("/begin-review")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
+    @PreAuthorize("hasRole('SUPERVISOR')")
     public InspectionDetailResponse beginReview(@PathVariable UUID inspectionId, @AuthenticationPrincipal FieldOpsUserDetails principal) {
         return toDetail(reviewService.beginReview(inspectionId, principal.getUser()));
     }
 
     @PostMapping("/approve")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
+    @PreAuthorize("hasRole('SUPERVISOR')")
     public InspectionDetailResponse approve(@PathVariable UUID inspectionId, @RequestBody(required = false) ReviewDecisionRequest request,
                                              @AuthenticationPrincipal FieldOpsUserDetails principal) {
         String comments = request == null ? null : request.comments();
@@ -44,14 +44,16 @@ public class ReviewController {
     }
 
     @PostMapping("/reject")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
+    @PreAuthorize("hasRole('SUPERVISOR')")
     public InspectionDetailResponse reject(@PathVariable UUID inspectionId, @Valid @RequestBody RejectInspectionRequest request,
                                             @AuthenticationPrincipal FieldOpsUserDetails principal) {
         return toDetail(reviewService.reject(inspectionId, request.reason(), request.comments(), principal.getUser()));
     }
 
     @GetMapping("/reviews")
-    public List<InspectionReviewResponse> listReviews(@PathVariable UUID inspectionId) {
+    public List<InspectionReviewResponse> listReviews(@PathVariable UUID inspectionId,
+                                                       @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        inspectionService.getAuthorized(inspectionId, principal.getUser());
         return reviewService.listByInspection(inspectionId).stream().map(reviewMapper::toResponse).toList();
     }
 

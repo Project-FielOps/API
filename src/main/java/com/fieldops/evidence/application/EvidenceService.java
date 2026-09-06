@@ -4,6 +4,8 @@ import com.fieldops.audit.application.AuditService;
 import com.fieldops.evidence.domain.Evidence;
 import com.fieldops.evidence.domain.EvidenceType;
 import com.fieldops.evidence.repository.EvidenceRepository;
+import com.fieldops.review.domain.NonConformity;
+import com.fieldops.review.repository.NonConformityRepository;
 import com.fieldops.inspection.domain.Inspection;
 import com.fieldops.inspection.domain.InspectionResponse;
 import com.fieldops.inspection.domain.InspectionStatus;
@@ -30,20 +32,21 @@ import java.util.UUID;
 public class EvidenceService {
 
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp", "image/heic");
-    private static final Set<InspectionStatus> EDITABLE_STATUSES = Set.of(InspectionStatus.IN_PROGRESS, InspectionStatus.REJECTED);
+    private static final Set<InspectionStatus> EDITABLE_STATUSES = Set.of(InspectionStatus.IN_PROGRESS);
 
     private final EvidenceRepository evidenceRepository;
     private final InspectionResponseRepository responseRepository;
     private final FileStorageService fileStorageService;
     private final AuditService auditService;
+    private final NonConformityRepository nonConformityRepository;
 
     public Evidence upload(Inspection inspection, UUID responseId, UUID nonConformityId, String description,
                             BigDecimal latitude, BigDecimal longitude, MultipartFile file, User actor) {
-        if (!EDITABLE_STATUSES.contains(inspection.getStatus()) && actor.getRole() != Role.ADMIN) {
+        if (!EDITABLE_STATUSES.contains(inspection.getStatus())) {
             throw new BusinessRuleException("INSPECTION_LOCKED",
-                    "Evidence can only be added while the inspection is IN_PROGRESS or REJECTED");
+                    "Evidence can only be added while the inspection is IN_PROGRESS");
         }
-        if (actor.getRole() == Role.TECHNICIAN && !inspection.getTechnician().getId().equals(actor.getId())) {
+        if (actor.getRole() != Role.TECHNICIAN || !inspection.getTechnician().getId().equals(actor.getId())) {
             throw new ForbiddenOperationException("Only the assigned technician can attach evidence");
         }
         if (file == null || file.isEmpty()) {
@@ -58,6 +61,14 @@ public class EvidenceService {
             response = responseRepository.findById(responseId).orElseThrow(() -> NotFoundException.of("InspectionResponse", responseId));
             if (!response.getInspection().getId().equals(inspection.getId())) {
                 throw new BusinessRuleException("RESPONSE_INSPECTION_MISMATCH", "The response does not belong to this inspection");
+            }
+        }
+        if (nonConformityId != null) {
+            NonConformity nc = nonConformityRepository.findById(nonConformityId)
+                    .orElseThrow(() -> NotFoundException.of("NonConformity", nonConformityId));
+            if (!nc.getInspection().getId().equals(inspection.getId())) {
+                throw new BusinessRuleException("NON_CONFORMITY_INSPECTION_MISMATCH",
+                        "The non-conformity does not belong to this inspection");
             }
         }
 
@@ -102,7 +113,7 @@ public class EvidenceService {
         if (inspection.getStatus() == InspectionStatus.APPROVED) {
             throw new BusinessRuleException("INSPECTION_LOCKED", "Evidence on an approved inspection cannot be removed");
         }
-        if (actor.getRole() == Role.TECHNICIAN && !inspection.getTechnician().getId().equals(actor.getId())) {
+        if (actor.getRole() != Role.TECHNICIAN || !inspection.getTechnician().getId().equals(actor.getId())) {
             throw new ForbiddenOperationException("Only the assigned technician can remove their own evidence");
         }
         fileStorageService.delete(evidence.getStorageKey());

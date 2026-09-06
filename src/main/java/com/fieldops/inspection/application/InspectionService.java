@@ -13,6 +13,8 @@ import com.fieldops.inspection.repository.InspectionItemSnapshotRepository;
 import com.fieldops.inspection.repository.InspectionRepository;
 import com.fieldops.inspection.repository.InspectionResponseRepository;
 import com.fieldops.evidence.repository.EvidenceRepository;
+import com.fieldops.review.domain.NonConformitySeverity;
+import com.fieldops.review.repository.NonConformityRepository;
 import com.fieldops.shared.exception.BusinessRuleException;
 import com.fieldops.shared.exception.ForbiddenOperationException;
 import com.fieldops.shared.exception.NotFoundException;
@@ -22,6 +24,7 @@ import com.fieldops.template.application.TemplateService;
 import com.fieldops.template.domain.InspectionTemplateVersion;
 import com.fieldops.template.domain.TemplateItem;
 import com.fieldops.template.domain.TemplateSection;
+import com.fieldops.template.domain.ResponseType;
 import com.fieldops.user.application.UserService;
 import com.fieldops.user.domain.Role;
 import com.fieldops.user.domain.User;
@@ -44,7 +47,7 @@ import java.util.UUID;
 @Transactional
 public class InspectionService {
 
-    private static final Set<InspectionStatus> EDITABLE_STATUSES = Set.of(InspectionStatus.IN_PROGRESS, InspectionStatus.REJECTED);
+    private static final Set<InspectionStatus> EDITABLE_STATUSES = Set.of(InspectionStatus.IN_PROGRESS);
 
     private final InspectionRepository inspectionRepository;
     private final InspectionItemSnapshotRepository snapshotRepository;
@@ -57,6 +60,7 @@ public class InspectionService {
     private final TemplateService templateService;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
+    private final NonConformityRepository nonConformityRepository;
 
     public Inspection create(CreateInspectionRequest request, User creator) {
         Client client = clientService.getById(request.clientId());
@@ -98,6 +102,10 @@ public class InspectionService {
                                 "The template has no published version available for new inspections"));
         if (!templateVersion.isPublished()) {
             throw new BusinessRuleException("TEMPLATE_VERSION_NOT_PUBLISHED", "Inspections must reference a published template version");
+        }
+        if (!templateVersion.isActiveForNewInspections()) {
+            throw new BusinessRuleException("TEMPLATE_VERSION_NOT_ACTIVE",
+                    "The selected template version is not active for new inspections");
         }
 
         Inspection inspection = new Inspection();
@@ -161,6 +169,13 @@ public class InspectionService {
     }
 
     @Transactional(readOnly = true)
+    public Inspection getAuthorized(UUID id, User actor) {
+        Inspection inspection = getById(id);
+        requireReadAccess(inspection, actor);
+        return inspection;
+    }
+
+    @Transactional(readOnly = true)
     public List<InspectionItemSnapshot> getSnapshots(UUID inspectionId) {
         return snapshotRepository.findByInspectionIdOrderBySectionOrderAscItemOrderAsc(inspectionId);
     }
@@ -185,6 +200,26 @@ public class InspectionService {
         if (siteId != null) return inspectionRepository.findBySiteId(siteId, pageable);
         if (status != null) return inspectionRepository.findByStatus(status, pageable);
         return inspectionRepository.findAll(pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Inspection> listForActor(User actor, UUID technicianId, UUID supervisorId, UUID clientId,
+                                         UUID siteId, InspectionStatus status, Priority priority,
+                                         Instant scheduledFrom, Instant scheduledTo, Pageable pageable) {
+        if (actor.getRole() == Role.TECHNICIAN) {
+            technicianId = actor.getId();
+            supervisorId = null;
+            clientId = null;
+            siteId = null;
+        }
+        if (actor.getRole() == Role.SUPERVISOR) {
+            technicianId = null;
+            supervisorId = actor.getId();
+            clientId = null;
+            siteId = null;
+        }
+        return inspectionRepository.findFiltered(technicianId, supervisorId, clientId, siteId, status, priority,
+                scheduledFrom, scheduledTo, pageable);
     }
 
     public Inspection assign(UUID id, UUID technicianId, UUID supervisorId, User actor) {
@@ -244,6 +279,16 @@ public class InspectionService {
         return inspection;
     }
 
+    public Inspection reopenCorrection(UUID id, User actor) {
+        Inspection inspection = getById(id);
+        requireStatus(inspection, "REOPEN_CORRECTION", InspectionStatus.REJECTED);
+        requireTechnician(inspection, actor);
+        inspection.setStatus(InspectionStatus.IN_PROGRESS);
+        inspection = inspectionRepository.save(inspection);
+        auditService.record(inspection.getId(), actor.getId(), "INSPECTION_REOPENED_FOR_CORRECTION", "Inspection", inspection.getId());
+        return inspection;
+    }
+
     private void validateRequiredItemsAnswered(Inspection inspection) {
         List<InspectionItemSnapshot> snapshots = getSnapshots(inspection.getId());
         Map<UUID, InspectionResponse> answers = getAnswersByItemId(inspection.getId());
@@ -265,6 +310,18 @@ public class InspectionService {
                 }
             }
         }
+        nonConformityRepository.findByInspectionId(inspection.getId()).stream()
+                .filter(nc -> nc.getSeverity() == NonConformitySeverity.CRITICAL)
+                .forEach(nc -> {
+                    if (nc.getDescription() == null || nc.getDescription().isBlank()) {
+                        throw new BusinessRuleException("DESCRIPTION_REQUIRED",
+                                "Critical non-conformities require a description");
+                    }
+                    if (evidenceRepository.findByNonConformityId(nc.getId()).isEmpty()) {
+                        throw new BusinessRuleException("EVIDENCE_REQUIRED",
+                                "Critical non-conformities require evidence before submission");
+                    }
+                });
     }
 
     private boolean isAnswered(InspectionResponse answer) {
@@ -290,7 +347,7 @@ public class InspectionService {
         Inspection inspection = getById(inspectionId);
         if (!EDITABLE_STATUSES.contains(inspection.getStatus())) {
             throw new BusinessRuleException("INSPECTION_LOCKED",
-                    "Responses can only be recorded while the inspection is IN_PROGRESS or REJECTED (current status: " + inspection.getStatus() + ")");
+                    "Responses can only be recorded while the inspection is IN_PROGRESS (current status: " + inspection.getStatus() + ")");
         }
         requireTechnician(inspection, actor);
         InspectionItemSnapshot snapshot = snapshotRepository.findById(request.inspectionItemId())
@@ -305,6 +362,8 @@ public class InspectionService {
             return r;
         });
         boolean isNew = response.getId() == null;
+        validateResponseType(snapshot.getResponseType(), request);
+        String previousValueJson = isNew ? null : serializeResponse(response);
         response.setValueText(request.valueText());
         response.setValueNumber(request.valueNumber());
         response.setValueBoolean(request.valueBoolean());
@@ -317,8 +376,43 @@ public class InspectionService {
         response.setServerReceivedAt(Instant.now());
         response = responseRepository.save(response);
         auditService.record(inspection.getId(), actor.getId(), isNew ? "RESPONSE_CREATED" : "RESPONSE_UPDATED",
-                "InspectionResponse", response.getId());
+                "InspectionResponse", response.getId(), previousValueJson, serializeResponse(response), null);
         return response;
+    }
+
+    private void validateResponseType(ResponseType responseType, AnswerUpsertRequest request) {
+        long populated = java.util.stream.Stream.of(request.valueText(), request.valueNumber(), request.valueBoolean(),
+                        request.valueDate(), request.valueJson(), request.conformity())
+                .filter(value -> value != null && (!(value instanceof String text) || !text.isBlank()))
+                .count();
+        boolean valid = switch (responseType) {
+            case TEXT_SHORT, TEXT_LONG -> populated == 0 || request.valueText() != null;
+            case NUMBER -> populated == 0 || request.valueNumber() != null;
+            case BOOLEAN -> populated == 0 || request.valueBoolean() != null;
+            case DATE -> populated == 0 || request.valueDate() != null;
+            case CONFORMITY -> populated == 0 || request.conformity() != null;
+            case SINGLE_CHOICE -> populated == 0 || request.valueJson() != null;
+        };
+        if (!valid || populated > 1) {
+            throw new BusinessRuleException("INVALID_RESPONSE_TYPE",
+                    "The answer fields are incompatible with response type " + responseType);
+        }
+    }
+
+    private String serializeResponse(InspectionResponse response) {
+        try {
+            Map<String, Object> values = new HashMap<>();
+            values.put("valueText", response.getValueText());
+            values.put("valueNumber", response.getValueNumber());
+            values.put("valueBoolean", response.getValueBoolean());
+            values.put("valueDate", response.getValueDate());
+            values.put("valueJson", response.getValueJson());
+            values.put("observation", response.getObservation());
+            values.put("conformity", response.getConformity());
+            return objectMapper.writeValueAsString(values);
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 
     public Inspection beginReview(UUID id, User actor) {
@@ -353,7 +447,6 @@ public class InspectionService {
     }
 
     private void requireSupervisor(Inspection inspection, User actor) {
-        if (actor.getRole() == Role.ADMIN) return;
         if (actor.getRole() != Role.SUPERVISOR || !inspection.getSupervisor().getId().equals(actor.getId())) {
             throw new ForbiddenOperationException("Only the assigned supervisor can review this inspection");
         }
@@ -367,9 +460,15 @@ public class InspectionService {
     }
 
     private void requireTechnician(Inspection inspection, User actor) {
-        if (actor.getRole() == Role.ADMIN) return;
-        if (!inspection.getTechnician().getId().equals(actor.getId())) {
+        if (actor.getRole() != Role.TECHNICIAN || !inspection.getTechnician().getId().equals(actor.getId())) {
             throw new ForbiddenOperationException("Only the assigned technician can perform this action");
         }
+    }
+
+    public void requireReadAccess(Inspection inspection, User actor) {
+        if (actor.getRole() == Role.ADMIN) return;
+        if (actor.getRole() == Role.TECHNICIAN && inspection.getTechnician().getId().equals(actor.getId())) return;
+        if (actor.getRole() == Role.SUPERVISOR && inspection.getSupervisor().getId().equals(actor.getId())) return;
+        throw new ForbiddenOperationException("You do not have access to this inspection");
     }
 }
