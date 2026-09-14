@@ -58,8 +58,8 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public Page<User> listAssignableTechnicians(Pageable pageable) {
-        return userRepository.findByRoleAndStatus(Role.TECHNICIAN, UserStatus.ACTIVE, pageable);
+    public Page<User> listAssignable(Role role, Pageable pageable) {
+        return userRepository.findByRoleAndStatus(role, UserStatus.ACTIVE, pageable);
     }
 
     public User update(UUID id, UpdateUserRequest request) {

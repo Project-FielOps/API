@@ -89,8 +89,8 @@ public class InspectionService {
             throw new BusinessRuleException("INVALID_TECHNICIAN", "technicianId must reference an active user with role TECHNICIAN");
         }
         User supervisor = userService.getById(request.supervisorId());
-        if ((supervisor.getRole() != Role.SUPERVISOR && supervisor.getRole() != Role.ADMIN) || supervisor.getStatus() != UserStatus.ACTIVE) {
-            throw new BusinessRuleException("INVALID_SUPERVISOR", "supervisorId must reference an active user with role SUPERVISOR or ADMIN");
+        if (supervisor.getRole() != Role.SUPERVISOR || supervisor.getStatus() != UserStatus.ACTIVE) {
+            throw new BusinessRuleException("INVALID_SUPERVISOR", "supervisorId must reference an active user with role SUPERVISOR");
         }
 
         InspectionTemplateVersion templateVersion = request.templateVersionNumber() != null
@@ -205,7 +205,8 @@ public class InspectionService {
     @Transactional(readOnly = true)
     public Page<Inspection> listForActor(User actor, UUID technicianId, UUID supervisorId, UUID clientId,
                                          UUID siteId, InspectionStatus status, Priority priority,
-                                         Instant scheduledFrom, Instant scheduledTo, Pageable pageable) {
+                                         Instant scheduledFrom, Instant scheduledTo, boolean overdue,
+                                         boolean awaitingReview, Pageable pageable) {
         if (actor.getRole() == Role.TECHNICIAN) {
             technicianId = actor.getId();
             supervisorId = null;
@@ -219,7 +220,7 @@ public class InspectionService {
             siteId = null;
         }
         return inspectionRepository.findFiltered(technicianId, supervisorId, clientId, siteId, status, priority,
-                scheduledFrom, scheduledTo, pageable);
+                scheduledFrom, scheduledTo, overdue, awaitingReview, Instant.now(), pageable);
     }
 
     public Inspection assign(UUID id, UUID technicianId, UUID supervisorId, User actor) {
@@ -230,8 +231,8 @@ public class InspectionService {
             throw new BusinessRuleException("INVALID_TECHNICIAN", "technicianId must reference an active user with role TECHNICIAN");
         }
         User supervisor = userService.getById(supervisorId);
-        if ((supervisor.getRole() != Role.SUPERVISOR && supervisor.getRole() != Role.ADMIN) || supervisor.getStatus() != UserStatus.ACTIVE) {
-            throw new BusinessRuleException("INVALID_SUPERVISOR", "supervisorId must reference an active user with role SUPERVISOR or ADMIN");
+        if (supervisor.getRole() != Role.SUPERVISOR || supervisor.getStatus() != UserStatus.ACTIVE) {
+            throw new BusinessRuleException("INVALID_SUPERVISOR", "supervisorId must reference an active user with role SUPERVISOR");
         }
         inspection.setTechnician(technician);
         inspection.setSupervisor(supervisor);

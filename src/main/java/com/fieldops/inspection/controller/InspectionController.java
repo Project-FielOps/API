@@ -48,10 +48,12 @@ public class InspectionController {
                                                           @RequestParam(required = false) com.fieldops.inspection.domain.Priority priority,
                                                           @RequestParam(required = false) java.time.Instant scheduledFrom,
                                                           @RequestParam(required = false) java.time.Instant scheduledTo,
+                                                          @RequestParam(defaultValue = "false") boolean overdue,
+                                                          @RequestParam(defaultValue = "false") boolean awaitingReview,
                                                           Pageable pageable,
                                                           @AuthenticationPrincipal FieldOpsUserDetails principal) {
         return PageResponse.of(inspectionService.listForActor(principal.getUser(), technicianId, supervisorId, clientId, siteId,
-                        status, priority, scheduledFrom, scheduledTo, pageable)
+                        status, priority, scheduledFrom, scheduledTo, overdue, awaitingReview, pageable)
                 .map(inspectionMapper::toSummary));
     }
 

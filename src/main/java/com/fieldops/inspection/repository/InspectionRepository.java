@@ -57,6 +57,8 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
               and (:priority is null or i.priority = :priority)
               and (:scheduledFrom is null or i.scheduledFor >= :scheduledFrom)
               and (:scheduledTo is null or i.scheduledFor <= :scheduledTo)
+              and (:overdue = false or (i.status in (com.fieldops.inspection.domain.InspectionStatus.ASSIGNED, com.fieldops.inspection.domain.InspectionStatus.IN_PROGRESS, com.fieldops.inspection.domain.InspectionStatus.REJECTED) and i.scheduledFor < :now))
+              and (:awaitingReview = false or i.status in (com.fieldops.inspection.domain.InspectionStatus.SUBMITTED, com.fieldops.inspection.domain.InspectionStatus.UNDER_REVIEW))
             """)
     @EntityGraph(attributePaths = {"client", "site", "equipment", "technician", "supervisor", "templateVersion"})
     Page<Inspection> findFiltered(@Param("technicianId") UUID technicianId,
@@ -67,6 +69,9 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
                                   @Param("priority") Priority priority,
                                   @Param("scheduledFrom") Instant scheduledFrom,
                                   @Param("scheduledTo") Instant scheduledTo,
+                                  @Param("overdue") boolean overdue,
+                                  @Param("awaitingReview") boolean awaitingReview,
+                                  @Param("now") Instant now,
                                   Pageable pageable);
 
     @Override
