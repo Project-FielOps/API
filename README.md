@@ -183,7 +183,18 @@ automaticamente na subida da aplicação.
 
 ## Rodando a API
 
+Com o arquivo `.env` configurado, inicie a API com:
+
 ```bash
+./start-api.sh
+```
+
+Esse script carrega automaticamente as variáveis do `.env` e executa o `mvn spring-boot:run`.
+
+Também é possível executar manualmente:
+
+```bash
+set -a; source .env; set +a
 mvn spring-boot:run
 ```
 
