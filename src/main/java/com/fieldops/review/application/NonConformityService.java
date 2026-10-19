@@ -8,6 +8,7 @@ import com.fieldops.inspection.domain.InspectionResponse;
 import com.fieldops.inspection.repository.InspectionItemSnapshotRepository;
 import com.fieldops.inspection.repository.InspectionResponseRepository;
 import com.fieldops.review.domain.NonConformity;
+import com.fieldops.review.domain.NonConformitySeverity;
 import com.fieldops.review.domain.NonConformityStatus;
 import com.fieldops.review.dto.CreateNonConformityRequest;
 import com.fieldops.review.dto.UpdateNonConformityRequest;
@@ -20,6 +21,9 @@ import com.fieldops.shared.exception.ForbiddenOperationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.time.Instant;
 import java.util.List;
@@ -88,6 +92,36 @@ public class NonConformityService {
     public List<NonConformity> listByInspection(UUID inspectionId, User actor) {
         Inspection inspection = inspectionService.getAuthorized(inspectionId, actor);
         return nonConformityRepository.findByInspectionId(inspection.getId());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<NonConformity> listForActor(User actor, UUID inspectionId, NonConformitySeverity severity,
+                                            NonConformityStatus status, Pageable pageable) {
+        if (actor.getRole() != Role.ADMIN && actor.getRole() != Role.SUPERVISOR
+                && actor.getRole() != Role.TECHNICIAN) {
+            throw new ForbiddenOperationException("You do not have access to non-conformities");
+        }
+
+        Specification<NonConformity> specification = (root, query, criteriaBuilder) -> {
+            var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+            if (inspectionId != null) {
+                predicates.add(criteriaBuilder.equal(root.get("inspection").get("id"), inspectionId));
+            }
+            if (severity != null) {
+                predicates.add(criteriaBuilder.equal(root.get("severity"), severity));
+            }
+            if (status != null) {
+                predicates.add(criteriaBuilder.equal(root.get("status"), status));
+            }
+            if (actor.getRole() == Role.SUPERVISOR) {
+                predicates.add(criteriaBuilder.equal(root.get("inspection").get("supervisor").get("id"), actor.getId()));
+            }
+            if (actor.getRole() == Role.TECHNICIAN) {
+                predicates.add(criteriaBuilder.equal(root.get("inspection").get("technician").get("id"), actor.getId()));
+            }
+            return criteriaBuilder.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+        return nonConformityRepository.findAll(specification, pageable);
     }
 
     @Transactional(readOnly = true)
