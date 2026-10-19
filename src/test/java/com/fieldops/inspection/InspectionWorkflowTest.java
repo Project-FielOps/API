@@ -7,6 +7,7 @@ import com.fieldops.user.domain.Role;
 import com.fieldops.user.domain.User;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -24,6 +25,20 @@ class InspectionWorkflowTest extends IntegrationTest {
     private TestUsers testUsers;
 
     @Test
+    void listsInspectionsWithoutOptionalFiltersOnPostgres() throws Exception {
+        User admin = testUsers.create("inspection-list-admin@fieldops.local", Role.ADMIN);
+        String adminToken = login(admin.getEmail());
+
+        mockMvc.perform(get("/api/v1/inspections")
+                        .param("page", "0")
+                        .param("size", "20")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(20));
+    }
+
+    @Test
     void fullLifecycleFromPlanningToApproval() throws Exception {
         User admin = testUsers.create("wf-admin@fieldops.local", Role.ADMIN);
         User supervisor = testUsers.create("wf-supervisor@fieldops.local", Role.SUPERVISOR);
@@ -33,6 +48,7 @@ class InspectionWorkflowTest extends IntegrationTest {
 
         String adminToken = login(admin.getEmail());
         String supervisorToken = login(supervisor.getEmail());
+        String otherSupervisorToken = login(otherSupervisor.getEmail());
         String technicianToken = login(technician.getEmail());
         String otherTechnicianToken = login(otherTechnician.getEmail());
 
@@ -78,14 +94,34 @@ class InspectionWorkflowTest extends IntegrationTest {
         apiPost("/api/v1/inspections/%s/submit".formatted(inspectionId), technicianToken, null, 422);
 
         // RN-038: a non-conforming answer without an observation must also block submission.
-        apiPut("/api/v1/inspections/%s/responses/%s".formatted(inspectionId, requiredItemId), technicianToken,
+        JsonNode nonConformingAnswer = apiPut("/api/v1/inspections/%s/responses/%s".formatted(inspectionId, requiredItemId), technicianToken,
                 "{\"inspectionItemId\":\"%s\",\"conformity\":\"NON_CONFORMING\"}".formatted(requiredItemId), 200);
         apiPost("/api/v1/inspections/%s/submit".formatted(inspectionId), technicianToken, null, 422);
 
         // Now answer with observation but still no evidence -> still blocked (RN-039, item configured evidence-required-on-failure).
-        apiPut("/api/v1/inspections/%s/responses/%s".formatted(inspectionId, requiredItemId), technicianToken,
+        nonConformingAnswer = apiPut("/api/v1/inspections/%s/responses/%s".formatted(inspectionId, requiredItemId), technicianToken,
                 "{\"inspectionItemId\":\"%s\",\"conformity\":\"NON_CONFORMING\",\"observation\":\"Oil is low\"}".formatted(requiredItemId), 200);
         apiPost("/api/v1/inspections/%s/submit".formatted(inspectionId), technicianToken, null, 422);
+
+        MockMultipartFile evidence = new MockMultipartFile("file", "oil.jpg", "image/jpeg",
+                new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xD9});
+        mockMvc.perform(multipart("/api/v1/inspections/{id}/evidence", inspectionId)
+                        .file(evidence)
+                        .param("responseId", nonConformingAnswer.get("id").asText())
+                        .header("Authorization", "Bearer " + technicianToken))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.mimeType").value("image/jpeg"));
+
+        // Evidence metadata and content are readable by the assigned supervisor only among reviewers.
+        JsonNode evidenceList = apiGetList("/api/v1/inspections/%s/evidence".formatted(inspectionId), supervisorToken);
+        String evidenceId = evidenceList.get(0).get("id").asText();
+        mockMvc.perform(get("/api/v1/inspections/{inspectionId}/evidence/{evidenceId}/content", inspectionId, evidenceId)
+                        .header("Authorization", "Bearer " + supervisorToken))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes(new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xD9}));
+        mockMvc.perform(get("/api/v1/inspections/{inspectionId}/evidence/{evidenceId}/content", inspectionId, evidenceId)
+                        .header("Authorization", "Bearer " + otherSupervisorToken))
+                .andExpect(status().isForbidden());
 
         // Switch the answer to CONFORMING so submit can proceed without needing an evidence upload in this test.
         apiPut("/api/v1/inspections/%s/responses/%s".formatted(inspectionId, requiredItemId), technicianToken,
@@ -93,11 +129,15 @@ class InspectionWorkflowTest extends IntegrationTest {
         apiPost("/api/v1/inspections/%s/submit".formatted(inspectionId), technicianToken, null, 200);
 
         // RN-079: only the assigned supervisor may begin the review.
-        String otherSupervisorToken = login(otherSupervisor.getEmail());
         apiPost("/api/v1/inspections/%s/begin-review".formatted(inspectionId), otherSupervisorToken, null, 403);
         apiPost("/api/v1/inspections/%s/begin-review".formatted(inspectionId), adminToken, null, 403);
 
         apiPost("/api/v1/inspections/%s/begin-review".formatted(inspectionId), supervisorToken, null, 200);
+
+        // Review decisions are object-scoped and only valid once per current review state.
+        apiPost("/api/v1/inspections/%s/approve".formatted(inspectionId), otherSupervisorToken, null, 403);
+        apiPost("/api/v1/inspections/%s/approve".formatted(inspectionId), adminToken, null, 403);
+        apiPost("/api/v1/inspections/%s/approve".formatted(inspectionId), technicianToken, null, 403);
 
         // RN-080: rejection requires a reason.
         mockMvc.perform(post("/api/v1/inspections/{id}/reject", inspectionId)
@@ -120,6 +160,9 @@ class InspectionWorkflowTest extends IntegrationTest {
         apiPost("/api/v1/inspections/%s/submit".formatted(inspectionId), technicianToken, null, 200);
         apiPost("/api/v1/inspections/%s/begin-review".formatted(inspectionId), supervisorToken, null, 200);
         apiPost("/api/v1/inspections/%s/approve".formatted(inspectionId), supervisorToken, "{\"comments\":\"Looks good now\"}", 200);
+        apiPost("/api/v1/inspections/%s/approve".formatted(inspectionId), supervisorToken, null, 409);
+        apiPost("/api/v1/inspections/%s/reject".formatted(inspectionId), supervisorToken,
+                "{\"reason\":\"Duplicate decision\"}", 409);
 
         JsonNode finalState = apiGet("/api/v1/inspections/%s".formatted(inspectionId), supervisorToken, 200);
         org.junit.jupiter.api.Assertions.assertEquals("APPROVED", finalState.get("status").asText());
@@ -134,6 +177,8 @@ class InspectionWorkflowTest extends IntegrationTest {
         // RN-086: every transition wrote an audit trail.
         JsonNode history = apiGetList("/api/v1/inspections/%s/history".formatted(inspectionId), supervisorToken);
         org.junit.jupiter.api.Assertions.assertTrue(history.size() >= 6);
+        apiGet("/api/v1/inspections/%s/history".formatted(inspectionId), otherSupervisorToken, 403);
+        apiGet("/api/v1/inspections/%s/history".formatted(inspectionId), technicianToken, 403);
     }
 
     private String login(String email) throws Exception {
