@@ -20,6 +20,7 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -71,7 +72,13 @@ public class AuthService {
             throw new BadCredentialsException("Invalid or expired refresh token");
         }
         String email = jwtService.extractEmail(refreshToken);
-        FieldOpsUserDetails principal = (FieldOpsUserDetails) userDetailsService.loadUserByUsername(email);
+        FieldOpsUserDetails principal;
+        try {
+            principal = (FieldOpsUserDetails) userDetailsService.loadUserByUsername(email);
+        } catch (UsernameNotFoundException ex) {
+            // A refresh token must never reveal whether its subject still exists.
+            throw new BadCredentialsException("Invalid or expired refresh token", ex);
+        }
         if (!principal.isEnabled() || !principal.isAccountNonLocked()) {
             throw new BadCredentialsException("Account is not active");
         }

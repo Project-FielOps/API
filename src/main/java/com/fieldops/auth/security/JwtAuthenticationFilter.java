@@ -9,6 +9,7 @@ import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,7 +40,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = header.substring(7);
         if (jwtService.isValid(token) && jwtService.isAccessToken(token) && SecurityContextHolder.getContext().getAuthentication() == null) {
             String email = jwtService.extractEmail(token);
-            FieldOpsUserDetails principal = (FieldOpsUserDetails) userDetailsService.loadUserByUsername(email);
+            FieldOpsUserDetails principal;
+            try {
+                principal = (FieldOpsUserDetails) userDetailsService.loadUserByUsername(email);
+            } catch (UsernameNotFoundException ex) {
+                // A signed token for a deleted user is still an unauthenticated request.
+                filterChain.doFilter(request, response);
+                return;
+            }
             if (principal.isEnabled() && principal.isAccountNonLocked()) {
                 var authToken = new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

@@ -5,11 +5,15 @@ import com.fieldops.support.TestUsers;
 import com.fieldops.user.domain.Role;
 import com.fieldops.user.domain.User;
 import com.fieldops.user.repository.UserRepository;
+import com.fieldops.auth.security.FieldOpsUserDetails;
+import com.fieldops.auth.security.JwtService;
 import com.fieldops.auth.application.EmailService;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -20,6 +24,8 @@ import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 
 class AuthenticationTest extends IntegrationTest {
 
@@ -28,6 +34,9 @@ class AuthenticationTest extends IntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private JwtService jwtService;
 
     @MockBean
     private EmailService emailService;
@@ -108,6 +117,38 @@ class AuthenticationTest extends IntegrationTest {
     }
 
     @Test
+    void validAccessTokenForDeletedUserReturns401InsteadOf500() throws Exception {
+        User deletedUser = new User();
+        deletedUser.setId(UUID.randomUUID());
+        deletedUser.setEmail("deleted@fieldops.local");
+        deletedUser.setRole(Role.ADMIN);
+        deletedUser.setStatus(com.fieldops.user.domain.UserStatus.ACTIVE);
+
+        String token = jwtService.generateAccessToken(new FieldOpsUserDetails(deletedUser));
+
+        mockMvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    void validRefreshTokenForDeletedUserReturnsInvalidCredentials() throws Exception {
+        User deletedUser = new User();
+        deletedUser.setId(UUID.randomUUID());
+        deletedUser.setEmail("deleted-refresh@fieldops.local");
+        deletedUser.setRole(Role.ADMIN);
+        deletedUser.setStatus(com.fieldops.user.domain.UserStatus.ACTIVE);
+
+        String token = jwtService.generateRefreshToken(new FieldOpsUserDetails(deletedUser));
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content("{\"refreshToken\":\"%s\"}".formatted(token)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+
+    @Test
     void meEndpointReturnsAuthenticatedUser() throws Exception {
         User user = testUsers.create("auth-me@fieldops.local", Role.SUPERVISOR);
         String token = login(user.getEmail());
@@ -129,20 +170,72 @@ class AuthenticationTest extends IntegrationTest {
     }
 
     @Test
-    void supervisorCanListOnlyActiveTechniciansForAssignment() throws Exception {
+    void supervisorCanListOnlyActiveAssignableUsersByRoleAndStatus() throws Exception {
         User supervisor = testUsers.create("auth-assign-supervisor@fieldops.local", Role.SUPERVISOR);
         testUsers.create("auth-assign-tech@fieldops.local", Role.TECHNICIAN);
         testUsers.createInactive("auth-assign-inactive-tech@fieldops.local", Role.TECHNICIAN);
-        testUsers.create("auth-assign-other-supervisor@fieldops.local", Role.SUPERVISOR);
+        testUsers.create("auth-assign-active-supervisor@fieldops.local", Role.SUPERVISOR);
+        testUsers.createInactive("auth-assign-inactive-supervisor@fieldops.local", Role.SUPERVISOR);
+        testUsers.create("auth-assign-admin@fieldops.local", Role.ADMIN);
         String token = login(supervisor.getEmail());
 
         mockMvc.perform(get("/api/v1/users/assignable").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[*].email", hasItem("auth-assign-tech@fieldops.local")))
                 .andExpect(jsonPath("$.content[*].email", not(hasItem("auth-assign-inactive-tech@fieldops.local"))))
-                .andExpect(jsonPath("$.content[*].email", not(hasItem("auth-assign-other-supervisor@fieldops.local"))))
+                .andExpect(jsonPath("$.content[*].email", not(hasItem("auth-assign-admin@fieldops.local"))))
                 .andExpect(jsonPath("$.content[*].role", everyItem(is("TECHNICIAN"))))
                 .andExpect(jsonPath("$.content[*].status", everyItem(is("ACTIVE"))));
+
+        mockMvc.perform(get("/api/v1/users/assignable")
+                        .param("role", "SUPERVISOR")
+                        .param("status", "ACTIVE")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].email", hasItem("auth-assign-active-supervisor@fieldops.local")))
+                .andExpect(jsonPath("$.content[*].email", not(hasItem("auth-assign-inactive-supervisor@fieldops.local"))))
+                .andExpect(jsonPath("$.content[*].role", everyItem(is("SUPERVISOR"))))
+                .andExpect(jsonPath("$.content[*].status", everyItem(is("ACTIVE"))));
+
+        mockMvc.perform(get("/api/v1/users/assignable")
+                        .param("role", "SUPERVISOR")
+                        .param("status", "INACTIVE")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(0)))
+                .andExpect(jsonPath("$.totalElements", is(0)));
+
+        mockMvc.perform(get("/api/v1/users/assignable")
+                        .param("role", "ADMIN")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void assignableUsersArePaginatedWithoutCrossRoleOrInactiveLeakage() throws Exception {
+        User admin = testUsers.create("auth-assign-pagination-admin@fieldops.local", Role.ADMIN);
+        for (int i = 0; i < 5; i++) {
+            testUsers.create("auth-assign-pagination-tech-%d@fieldops.local".formatted(i), Role.TECHNICIAN);
+        }
+        testUsers.createInactive("auth-assign-pagination-inactive@fieldops.local", Role.TECHNICIAN);
+        String token = login(admin.getEmail());
+
+        mockMvc.perform(get("/api/v1/users/assignable")
+                        .param("role", "TECHNICIAN")
+                        .param("status", "ACTIVE")
+                        .param("page", "1")
+                        .param("size", "2")
+                        .param("sort", "email,asc")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page", is(1)))
+                .andExpect(jsonPath("$.size", is(2)))
+                .andExpect(jsonPath("$.totalElements", greaterThanOrEqualTo(5)))
+                .andExpect(jsonPath("$.totalPages", greaterThanOrEqualTo(3)))
+                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.content[*].role", everyItem(is("TECHNICIAN"))))
+                .andExpect(jsonPath("$.content[*].status", everyItem(is("ACTIVE"))))
+                .andExpect(jsonPath("$.content[*].email", not(hasItem("auth-assign-pagination-inactive@fieldops.local"))));
     }
 
     @Test
@@ -151,6 +244,21 @@ class AuthenticationTest extends IntegrationTest {
         String token = login(technician.getEmail());
 
         mockMvc.perform(get("/api/v1/users/assignable").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void technicianCannotScheduleInspection() throws Exception {
+        User technician = testUsers.create("auth-schedule-forbidden@fieldops.local", Role.TECHNICIAN);
+        String token = login(technician.getEmail());
+
+        mockMvc.perform(post("/api/v1/inspections")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("""
+                                {"templateId":"%s","clientId":"%s","siteId":"%s","technicianId":"%s","supervisorId":"%s",
+                                 "title":"Unauthorized schedule attempt","scheduledFor":"2030-01-01T00:00:00Z"}
+                                """.formatted(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())))
                 .andExpect(status().isForbidden());
     }
 
