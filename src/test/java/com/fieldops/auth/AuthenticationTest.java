@@ -8,12 +8,18 @@ import com.fieldops.user.repository.UserRepository;
 import com.fieldops.auth.security.FieldOpsUserDetails;
 import com.fieldops.auth.security.JwtService;
 import com.fieldops.auth.application.EmailService;
+import com.fieldops.auth.domain.PasswordResetToken;
+import com.fieldops.auth.repository.PasswordResetTokenRepository;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.UUID;
+import java.time.Instant;
+import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -37,6 +43,9 @@ class AuthenticationTest extends IntegrationTest {
 
     @Autowired
     private JwtService jwtService;
+
+    @Autowired
+    private PasswordResetTokenRepository passwordResetTokenRepository;
 
     @MockBean
     private EmailService emailService;
@@ -337,6 +346,61 @@ class AuthenticationTest extends IntegrationTest {
     }
 
     @Test
+    void passwordResetStoresOnlySha256HashWithThirtyMinuteExpiry() throws Exception {
+        User user = testUsers.create("reset-storage@fieldops.local", Role.ADMIN);
+        Instant beforeRequest = Instant.now();
+
+        mockMvc.perform(post("/api/v1/auth/forgot-password").contentType("application/json")
+                        .content("{\"email\":\"reset-storage@fieldops.local\"}"))
+                .andExpect(status().isAccepted());
+
+        ArgumentCaptor<String> url = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(emailService).sendPasswordResetEmail(
+                org.mockito.ArgumentMatchers.eq(user.getEmail()), url.capture());
+        String rawToken = url.getValue().substring(url.getValue().indexOf("token=") + 6);
+        PasswordResetToken persisted = passwordResetTokenRepository.findAll().stream()
+                .filter(candidate -> candidate.getUser().getId().equals(user.getId()))
+                .findFirst()
+                .orElseThrow();
+
+        org.junit.jupiter.api.Assertions.assertNotEquals(rawToken, persisted.getTokenHash());
+        org.junit.jupiter.api.Assertions.assertEquals(64, persisted.getTokenHash().length());
+        org.junit.jupiter.api.Assertions.assertEquals(sha256(rawToken), persisted.getTokenHash());
+        org.junit.jupiter.api.Assertions.assertTrue(persisted.getExpiresAt().isAfter(beforeRequest.plusSeconds(1790)));
+        org.junit.jupiter.api.Assertions.assertTrue(persisted.getExpiresAt().isBefore(beforeRequest.plusSeconds(1810)));
+    }
+
+    @Test
+    void invalidPasswordResetTokenIsRejectedWithoutChangingPassword() throws Exception {
+        User user = testUsers.create("reset-invalid@fieldops.local", Role.ADMIN);
+
+        mockMvc.perform(post("/api/v1/auth/reset-password").contentType("application/json")
+                        .content("{\"token\":\"invalid-reset-token\",\"newPassword\":\"NewPassword@123\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+
+        mockMvc.perform(post("/api/v1/auth/login").contentType("application/json")
+                        .content("{\"email\":\"%s\",\"password\":\"%s\"}"
+                                .formatted(user.getEmail(), TestUsers.RAW_PASSWORD)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void expiredPasswordResetTokenIsRejected() throws Exception {
+        User user = testUsers.create("reset-expired@fieldops.local", Role.ADMIN);
+        PasswordResetToken expired = new PasswordResetToken();
+        expired.setUser(user);
+        expired.setTokenHash(sha256("expired-reset-token"));
+        expired.setExpiresAt(Instant.now().minusSeconds(1));
+        passwordResetTokenRepository.saveAndFlush(expired);
+
+        mockMvc.perform(post("/api/v1/auth/reset-password").contentType("application/json")
+                        .content("{\"token\":\"expired-reset-token\",\"newPassword\":\"NewPassword@123\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+
+    @Test
     void resetPasswordConsumesTokenAndRevokesRefreshSession() throws Exception {
         User user = testUsers.create("reset-flow@fieldops.local", Role.ADMIN);
         String loginBody = mockMvc.perform(post("/api/v1/auth/login").contentType("application/json")
@@ -376,6 +440,14 @@ class AuthenticationTest extends IntegrationTest {
                         .contentType("application/json")
                         .content("{\"currentPassword\":\"%s\",\"newPassword\":\"ChangedPassword@123\"}".formatted(TestUsers.RAW_PASSWORD)))
                 .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/clients").header("Authorization", "Bearer " + access))
+                .andExpect(status().isOk());
+    }
+
+    private static String sha256(String value) throws Exception {
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(StandardCharsets.UTF_8)));
     }
 
     private String login(String email) throws Exception {

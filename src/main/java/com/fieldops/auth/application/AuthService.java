@@ -107,9 +107,12 @@ public class AuthService {
         if (!passwordEncoder.matches(request.currentPassword(), principal.getUser().getPasswordHash())) {
             throw new BadCredentialsException("Invalid current password");
         }
-        principal.getUser().setPasswordHash(passwordEncoder.encode(request.newPassword()));
-        principal.getUser().setMustChangePassword(false);
-        refreshSessionRepository.revokeAllByUserId(principal.getUserId());
+        User user = userRepository.findById(principal.getUserId())
+                .orElseThrow(() -> new BadCredentialsException("Invalid authenticated user"));
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setMustChangePassword(false);
+        userRepository.save(user);
+        refreshSessionRepository.revokeAllByUserId(user.getId());
     }
 
     @Transactional
@@ -121,8 +124,10 @@ public class AuthService {
         if (previous != null && previous.isAfter(now)) return;
         resetRateLimit.put(key, now.plusSeconds(60));
         var userOptional = userRepository.findByEmailIgnoreCase(email);
-        log.info("PASSWORD_RESET_REQUESTED userFound={} active={}", userOptional.isPresent(),
-                userOptional.map(User::isActive).orElse(false));
+        // Keep this event deliberately account-agnostic. Logging whether an email
+        // exists or is active would recreate the enumeration channel for anyone
+        // with access to application logs.
+        log.info("PASSWORD_RESET_REQUEST_ACCEPTED");
         if (userOptional.isEmpty() || !userOptional.get().isActive()) return;
         User user = userOptional.get();
         passwordResetTokenRepository.invalidateActiveByUserId(user.getId());
