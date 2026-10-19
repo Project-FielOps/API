@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
  * and is idempotent (skips if any user already exists).
  */
 @Component
-@Profile("dev")
+@Profile({"dev", "e2e"})
 @RequiredArgsConstructor
 public class DevDataSeeder implements CommandLineRunner {
 

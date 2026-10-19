@@ -251,6 +251,21 @@ o Testcontainers gerencia seu próprio container. Cobrem:
 > ("Could not find a valid Docker environment"), crie `~/.testcontainers.properties` com
 > `docker.host=unix:///Users/<seu-usuario>/.docker/run/docker.sock` — foi o que resolveu neste ambiente.
 
+## E2E com API real
+
+A infraestrutura para executar uma suíte externa, como Playwright, contra a API real está em
+[`scripts/e2e/README.md`](scripts/e2e/README.md). Ela usa um perfil `e2e` separado, Postgres
+descartável em projeto Docker próprio, seed local e readiness que inclui o banco.
+
+```bash
+./scripts/e2e/run-with-api.sh --reset -- \
+  npm --prefix ../interface-administrativa run e2e
+```
+
+O wrapper deixa a API em `http://127.0.0.1:8080` durante o comando filho e encerra o processo e os
+containers ao final. `--reset` remove apenas o volume do projeto `fieldops-e2e`; não afeta o banco
+de desenvolvimento. Os specs Playwright não fazem parte desta mudança.
+
 ## Estrutura do projeto
 
 Organização por contexto de negócio (`com.fieldops.<contexto>`), cada um com
