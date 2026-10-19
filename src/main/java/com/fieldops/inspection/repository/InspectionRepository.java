@@ -58,9 +58,14 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID>,
 
     long countByStatus(InspectionStatus status);
 
+    long countBySupervisorIdAndStatus(UUID supervisorId, InspectionStatus status);
+
     long countByStatusAndScheduledForBefore(InspectionStatus status, Instant before);
 
     long countByStatusInAndScheduledForBefore(List<InspectionStatus> statuses, Instant before);
+
+    long countBySupervisorIdAndStatusInAndScheduledForBefore(UUID supervisorId, List<InspectionStatus> statuses,
+                                                              Instant before);
 
     @Query("select i.status as status, count(i) as total from Inspection i group by i.status")
     List<StatusCount> countGroupedByStatus();

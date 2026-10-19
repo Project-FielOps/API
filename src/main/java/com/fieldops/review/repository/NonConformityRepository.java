@@ -13,4 +13,6 @@ public interface NonConformityRepository extends JpaRepository<NonConformity, UU
     List<NonConformity> findByInspectionId(UUID inspectionId);
 
     long countBySeverity(NonConformitySeverity severity);
+
+    long countByInspectionSupervisorIdAndSeverity(UUID supervisorId, NonConformitySeverity severity);
 }

@@ -78,6 +78,13 @@ class InspectionWorkflowTest extends IntegrationTest {
                  "title":"Generator inspection","instructions":"Check carefully","priority":"HIGH","scheduledFor":"%s"}
                 """.formatted(templateId, clientId, siteId, equipmentId, technician.getId(), supervisor.getId(), scheduledFor), 201);
         String inspectionId = inspection.get("id").asText();
+        apiGet("/api/v1/inspections?status=ASSIGNED&priority=HIGH&technicianId=%s&supervisorId=%s&clientId=%s&siteId=%s&scheduledFrom=%s&scheduledTo=%s&overdue=false&awaitingReview=false&page=0&size=20&sort=scheduledFor,asc"
+                .formatted(technician.getId(), supervisor.getId(), clientId, siteId, scheduledFor, scheduledFor),
+                adminToken, 200);
+        JsonNode supervisorInspections = apiGet("/api/v1/inspections", supervisorToken, 200);
+        org.junit.jupiter.api.Assertions.assertEquals(1, supervisorInspections.get("totalElements").asInt());
+        JsonNode otherSupervisorInspections = apiGet("/api/v1/inspections", otherSupervisorToken, 200);
+        org.junit.jupiter.api.Assertions.assertEquals(0, otherSupervisorInspections.get("totalElements").asInt());
         String requiredItemId = null;
         for (JsonNode item : inspection.get("items")) {
             if (item.get("itemTitle").asText().equals("Oil level adequate?")) requiredItemId = item.get("id").asText();
@@ -179,6 +186,22 @@ class InspectionWorkflowTest extends IntegrationTest {
         org.junit.jupiter.api.Assertions.assertTrue(history.size() >= 6);
         apiGet("/api/v1/inspections/%s/history".formatted(inspectionId), otherSupervisorToken, 403);
         apiGet("/api/v1/inspections/%s/history".formatted(inspectionId), technicianToken, 403);
+    }
+
+    @Test
+    void rejectsUnsupportedInspectionFilterValuesInsteadOfIgnoringThem() throws Exception {
+        User admin = testUsers.create("inspection-filter-contract-admin@fieldops.local", Role.ADMIN);
+        String adminToken = login(admin.getEmail());
+
+        mockMvc.perform(get("/api/v1/inspections")
+                        .param("status", "NOT_A_STATUS")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/v1/inspections")
+                        .param("priority", "NOT_A_PRIORITY")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest());
     }
 
     private String login(String email) throws Exception {
