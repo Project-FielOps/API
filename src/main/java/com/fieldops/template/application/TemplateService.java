@@ -62,6 +62,9 @@ public class TemplateService {
 
     @Transactional(readOnly = true)
     public Page<InspectionTemplate> list(TemplateStatus status, String category, Pageable pageable) {
+        if (status != null && category != null && !category.isBlank()) {
+            return templateRepository.findByStatusAndCategoryIgnoreCase(status, category, pageable);
+        }
         if (status != null) {
             return templateRepository.findByStatus(status, pageable);
         }
@@ -69,6 +72,11 @@ public class TemplateService {
             return templateRepository.findByCategoryIgnoreCase(category, pageable);
         }
         return templateRepository.findAll(pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public List<String> listCategories() {
+        return templateRepository.findDistinctCategories();
     }
 
     public InspectionTemplate update(UUID id, UpdateTemplateRequest request) {
