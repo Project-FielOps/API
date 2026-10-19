@@ -16,6 +16,7 @@ import com.fieldops.evidence.repository.EvidenceRepository;
 import com.fieldops.review.domain.NonConformitySeverity;
 import com.fieldops.review.repository.NonConformityRepository;
 import com.fieldops.shared.exception.BusinessRuleException;
+import com.fieldops.shared.exception.ConflictException;
 import com.fieldops.shared.exception.ForbiddenOperationException;
 import com.fieldops.shared.exception.NotFoundException;
 import com.fieldops.site.application.SiteService;
@@ -32,6 +33,7 @@ import com.fieldops.user.domain.UserStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -219,8 +221,47 @@ public class InspectionService {
             clientId = null;
             siteId = null;
         }
-        return inspectionRepository.findFiltered(technicianId, supervisorId, clientId, siteId, status, priority,
-                scheduledFrom, scheduledTo, overdue, awaitingReview, Instant.now(), pageable);
+        UUID filterTechnicianId = technicianId;
+        UUID filterSupervisorId = supervisorId;
+        UUID filterClientId = clientId;
+        UUID filterSiteId = siteId;
+        Specification<Inspection> specification = (root, query, criteriaBuilder) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+            if (filterTechnicianId != null) {
+                predicates.add(criteriaBuilder.equal(root.get("technician").get("id"), filterTechnicianId));
+            }
+            if (filterSupervisorId != null) {
+                predicates.add(criteriaBuilder.equal(root.get("supervisor").get("id"), filterSupervisorId));
+            }
+            if (filterClientId != null) {
+                predicates.add(criteriaBuilder.equal(root.get("client").get("id"), filterClientId));
+            }
+            if (filterSiteId != null) {
+                predicates.add(criteriaBuilder.equal(root.get("site").get("id"), filterSiteId));
+            }
+            if (status != null) {
+                predicates.add(criteriaBuilder.equal(root.get("status"), status));
+            }
+            if (priority != null) {
+                predicates.add(criteriaBuilder.equal(root.get("priority"), priority));
+            }
+            if (scheduledFrom != null) {
+                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("scheduledFor"), scheduledFrom));
+            }
+            if (scheduledTo != null) {
+                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("scheduledFor"), scheduledTo));
+            }
+            if (overdue) {
+                predicates.add(root.get("status").in(InspectionStatus.ASSIGNED, InspectionStatus.IN_PROGRESS,
+                        InspectionStatus.REJECTED));
+                predicates.add(criteriaBuilder.lessThan(root.get("scheduledFor"), Instant.now()));
+            }
+            if (awaitingReview) {
+                predicates.add(root.get("status").in(InspectionStatus.SUBMITTED, InspectionStatus.UNDER_REVIEW));
+            }
+            return criteriaBuilder.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+        return inspectionRepository.findAll(specification, pageable);
     }
 
     public Inspection assign(UUID id, UUID technicianId, UUID supervisorId, User actor) {
@@ -418,7 +459,7 @@ public class InspectionService {
 
     public Inspection beginReview(UUID id, User actor) {
         Inspection inspection = getById(id);
-        requireStatus(inspection, "BEGIN_REVIEW", InspectionStatus.SUBMITTED);
+        requireReviewStatus(inspection, "BEGIN_REVIEW", InspectionStatus.SUBMITTED);
         requireSupervisor(inspection, actor);
         inspection.setStatus(InspectionStatus.UNDER_REVIEW);
         inspection = inspectionRepository.save(inspection);
@@ -428,7 +469,7 @@ public class InspectionService {
 
     public Inspection approve(UUID id, User actor) {
         Inspection inspection = getById(id);
-        requireStatus(inspection, "APPROVE", InspectionStatus.UNDER_REVIEW);
+        requireReviewStatus(inspection, "APPROVE", InspectionStatus.UNDER_REVIEW);
         requireSupervisor(inspection, actor);
         inspection.setStatus(InspectionStatus.APPROVED);
         inspection.setApprovedAt(Instant.now());
@@ -439,7 +480,7 @@ public class InspectionService {
 
     public Inspection reject(UUID id, User actor) {
         Inspection inspection = getById(id);
-        requireStatus(inspection, "REJECT", InspectionStatus.UNDER_REVIEW);
+        requireReviewStatus(inspection, "REJECT", InspectionStatus.UNDER_REVIEW);
         requireSupervisor(inspection, actor);
         inspection.setStatus(InspectionStatus.REJECTED);
         inspection = inspectionRepository.save(inspection);
@@ -457,6 +498,13 @@ public class InspectionService {
         if (inspection.getStatus() != expected) {
             throw new BusinessRuleException("INVALID_TRANSITION",
                     "Cannot " + action + " an inspection in status " + inspection.getStatus() + " (expected " + expected + ")");
+        }
+    }
+
+    private void requireReviewStatus(Inspection inspection, String action, InspectionStatus expected) {
+        if (inspection.getStatus() != expected) {
+            throw new ConflictException("Cannot " + action + " an inspection in status " + inspection.getStatus()
+                    + " (expected " + expected + ")");
         }
     }
 

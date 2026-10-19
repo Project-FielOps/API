@@ -10,3 +10,4 @@ logging:
     level: "%5p [requestId:%X{requestId}]"
   level:
     com.fieldops: DEBUG
+    org.springframework.web.servlet.mvc.method.annotation: INFO

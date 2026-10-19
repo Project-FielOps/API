@@ -31,3 +31,7 @@ fieldops:
     from: no-reply@test.fieldops.local
     password-reset-url: http://localhost:4200/reset-password
     region: us-east-1
+
+logging:
+  level:
+    org.springframework.web.servlet.mvc.method.annotation: INFO

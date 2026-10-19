@@ -6,6 +6,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.Query;
 
 import java.time.Instant;
@@ -13,9 +14,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import com.fieldops.inspection.domain.Priority;
-import org.springframework.data.repository.query.Param;
 
-public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
+public interface InspectionRepository extends JpaRepository<Inspection, UUID>,
+        org.springframework.data.jpa.repository.JpaSpecificationExecutor<Inspection> {
 
     /**
      * InspectionMapper reads client/site/equipment/technician/supervisor/templateVersion names after
@@ -47,32 +48,9 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
     @EntityGraph(attributePaths = {"client", "site", "equipment", "technician", "supervisor", "templateVersion"})
     Page<Inspection> findByStatus(InspectionStatus status, Pageable pageable);
 
-    @Query("""
-            select i from Inspection i
-            where (:technicianId is null or i.technician.id = :technicianId)
-              and (:supervisorId is null or i.supervisor.id = :supervisorId)
-              and (:clientId is null or i.client.id = :clientId)
-              and (:siteId is null or i.site.id = :siteId)
-              and (:status is null or i.status = :status)
-              and (:priority is null or i.priority = :priority)
-              and (:scheduledFrom is null or i.scheduledFor >= :scheduledFrom)
-              and (:scheduledTo is null or i.scheduledFor <= :scheduledTo)
-              and (:overdue = false or (i.status in (com.fieldops.inspection.domain.InspectionStatus.ASSIGNED, com.fieldops.inspection.domain.InspectionStatus.IN_PROGRESS, com.fieldops.inspection.domain.InspectionStatus.REJECTED) and i.scheduledFor < :now))
-              and (:awaitingReview = false or i.status in (com.fieldops.inspection.domain.InspectionStatus.SUBMITTED, com.fieldops.inspection.domain.InspectionStatus.UNDER_REVIEW))
-            """)
     @EntityGraph(attributePaths = {"client", "site", "equipment", "technician", "supervisor", "templateVersion"})
-    Page<Inspection> findFiltered(@Param("technicianId") UUID technicianId,
-                                  @Param("supervisorId") UUID supervisorId,
-                                  @Param("clientId") UUID clientId,
-                                  @Param("siteId") UUID siteId,
-                                  @Param("status") InspectionStatus status,
-                                  @Param("priority") Priority priority,
-                                  @Param("scheduledFrom") Instant scheduledFrom,
-                                  @Param("scheduledTo") Instant scheduledTo,
-                                  @Param("overdue") boolean overdue,
-                                  @Param("awaitingReview") boolean awaitingReview,
-                                  @Param("now") Instant now,
-                                  Pageable pageable);
+    @Override
+    Page<Inspection> findAll(Specification<Inspection> specification, Pageable pageable);
 
     @Override
     @EntityGraph(attributePaths = {"client", "site", "equipment", "technician", "supervisor", "templateVersion"})
@@ -80,9 +58,14 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
 
     long countByStatus(InspectionStatus status);
 
+    long countBySupervisorIdAndStatus(UUID supervisorId, InspectionStatus status);
+
     long countByStatusAndScheduledForBefore(InspectionStatus status, Instant before);
 
     long countByStatusInAndScheduledForBefore(List<InspectionStatus> statuses, Instant before);
+
+    long countBySupervisorIdAndStatusInAndScheduledForBefore(UUID supervisorId, List<InspectionStatus> statuses,
+                                                              Instant before);
 
     @Query("select i.status as status, count(i) as total from Inspection i group by i.status")
     List<StatusCount> countGroupedByStatus();

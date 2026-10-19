@@ -122,7 +122,7 @@ public class EvidenceService {
 
     @Transactional(readOnly = true)
     public Evidence getById(UUID id) {
-        return evidenceRepository.findById(id).orElseThrow(() -> NotFoundException.of("Evidence", id));
+        return evidenceRepository.findWithInspectionById(id).orElseThrow(() -> NotFoundException.of("Evidence", id));
     }
 
     @Transactional(readOnly = true)

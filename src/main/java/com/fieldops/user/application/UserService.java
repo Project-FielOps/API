@@ -58,7 +58,13 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public Page<User> listAssignable(Role role, Pageable pageable) {
+    public Page<User> listAssignable(Role role, UserStatus status, Pageable pageable) {
+        // The MVP has one organization and no persisted organization/scope relation.
+        // Keep the actor scope at the endpoint authorization boundary and never expose
+        // inactive users as assignable, regardless of the requested status filter.
+        if (status != null && status != UserStatus.ACTIVE) {
+            return Page.empty(pageable);
+        }
         return userRepository.findByRoleAndStatus(role, UserStatus.ACTIVE, pageable);
     }
 
