@@ -64,6 +64,8 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID>,
 
     long countByStatusInAndScheduledForBefore(List<InspectionStatus> statuses, Instant before);
 
+    Optional<Inspection> findByTitle(String title);
+
     long countBySupervisorIdAndStatusInAndScheduledForBefore(UUID supervisorId, List<InspectionStatus> statuses,
                                                               Instant before);
 

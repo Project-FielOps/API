@@ -9,6 +9,7 @@ import com.fieldops.inspection.domain.InspectionStatus;
 import com.fieldops.inspection.dto.*;
 import com.fieldops.inspection.mapper.InspectionMapper;
 import com.fieldops.shared.dto.PageResponse;
+import com.fieldops.user.repository.UserRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -30,6 +31,7 @@ public class InspectionController {
     private final InspectionService inspectionService;
     private final InspectionMapper inspectionMapper;
     private final AuditEventRepository auditEventRepository;
+    private final UserRepository userRepository;
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
@@ -101,7 +103,9 @@ public class InspectionController {
         inspectionService.getAuthorized(id, principal.getUser());
         return auditEventRepository.findByInspectionIdOrderByOccurredAtAsc(id).stream()
                 .map(e -> new AuditEventResponse(e.getId(), e.getInspectionId(), e.getActorId(), e.getAction(), e.getEntityType(),
-                        e.getEntityId(), e.getOccurredAt(), e.getPreviousValueJson(), e.getNewValueJson(), e.getMetadataJson(), e.getRequestId()))
+                        e.getEntityId(), e.getOccurredAt(), e.getPreviousValueJson(), e.getNewValueJson(), e.getMetadataJson(),
+                        e.getActorId() == null ? null : userRepository.findById(e.getActorId()).map(user -> user.getName()).orElse(null),
+                        e.getRequestId()))
                 .toList();
     }
 

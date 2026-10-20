@@ -77,6 +77,18 @@ class DashboardControllerIntegrationTest extends IntegrationTest {
         apiPost("/api/v1/inspections/%s/non-conformities".formatted(overdueInspectionId), assignedTechnicianToken,
                 "{\"inspectionItemId\":\"%s\",\"responseId\":null,\"title\":\"Dashboard critical finding\",\"description\":\"Critical finding created for dashboard integration coverage\",\"severity\":\"CRITICAL\"}".formatted(snapshotItemId), 201);
 
+        JsonNode adminNonConformities = apiGet("/api/v1/non-conformities?inspectionId=%s&severity=CRITICAL&page=0&size=20".formatted(overdueInspectionId), adminToken, 200);
+        assertEquals(1, adminNonConformities.get("content").size(),
+                "ADMIN must see non-conformities across inspections");
+        assertEquals("Dashboard critical finding", adminNonConformities.get("content").get(0).get("title").asText());
+
+        JsonNode assignedNonConformities = apiGet("/api/v1/non-conformities", assignedSupervisorToken, 200);
+        assertEquals(1, assignedNonConformities.get("content").size(),
+                "Supervisor must see non-conformities from assigned inspections");
+        JsonNode otherNonConformities = apiGet("/api/v1/non-conformities", otherSupervisorToken, 200);
+        assertEquals(0, otherNonConformities.get("content").size(),
+                "Supervisor must not see another supervisor's non-conformities");
+
         JsonNode adminAfter = dashboard(adminToken);
         assertEquals(assignedBefore + 2, adminAfter.at("/inspectionsByStatus/ASSIGNED").asLong(),
                 "ADMIN must see both inspections in the global count");
@@ -139,6 +151,14 @@ class DashboardControllerIntegrationTest extends IntegrationTest {
         String response = mockMvc.perform(get("/api/v1/dashboard/summary")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(response);
+    }
+
+    private JsonNode apiGet(String url, String token, int expectedStatus) throws Exception {
+        String response = mockMvc.perform(get(url)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().is(expectedStatus))
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(response);
     }
