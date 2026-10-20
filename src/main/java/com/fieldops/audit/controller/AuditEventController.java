@@ -26,6 +26,9 @@ import java.util.stream.Collectors;
 @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
 public class AuditEventController {
 
+    private static final Instant DEFAULT_OCCURRED_FROM = Instant.parse("1970-01-01T00:00:00Z");
+    private static final Instant DEFAULT_OCCURRED_TO = Instant.parse("9999-12-31T23:59:59.999999Z");
+
     private final AuditEventRepository auditEventRepository;
     private final UserRepository userRepository;
 
@@ -37,9 +40,15 @@ public class AuditEventController {
                                                   @RequestParam(required = false) LocalDate occurredFrom,
                                                   @RequestParam(required = false) LocalDate occurredTo,
                                                   Pageable pageable) {
-        Instant occurredFromInstant = occurredFrom == null ? null : occurredFrom.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant occurredToInstant = occurredTo == null ? null : occurredTo.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-        var page = auditEventRepository.search(action, entityType, entityId, actorId, occurredFromInstant, occurredToInstant, pageable);
+        Instant occurredFromInstant = occurredFrom == null
+                ? DEFAULT_OCCURRED_FROM
+                : occurredFrom.atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant occurredToInstant = occurredTo == null
+                ? DEFAULT_OCCURRED_TO
+                : occurredTo.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        var page = auditEventRepository.search(action == null ? "" : action,
+                entityType == null ? "" : entityType,
+                entityId, actorId, occurredFromInstant, occurredToInstant, pageable);
         var actorIds = page.getContent().stream()
                 .map(AuditEvent::getActorId)
                 .filter(java.util.Objects::nonNull)
