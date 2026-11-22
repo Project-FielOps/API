@@ -17,4 +17,6 @@ set -a
 source "$ENV_FILE"
 set +a
 
+export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-dev}"
+
 exec mvn spring-boot:run

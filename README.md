@@ -177,6 +177,19 @@ set -a; source .env; set +a
 docker compose up -d
 ```
 
+Para uma execução em EC2 com Docker, use o Compose de produção. Ele sobe a API e o PostgreSQL
+em serviços separados, mantém o banco e as evidências em volumes persistentes e não publica o
+PostgreSQL na internet:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+O arquivo `.env` da EC2 deve fornecer `FIELDOPS_DB_PASSWORD`, `FIELDOPS_JWT_SECRET`,
+`FIELDOPS_CORS_ALLOWED_ORIGINS` e `FIELDOPS_PASSWORD_RESET_URL`. O perfil `prod` desabilita o
+seed de usuários de desenvolvimento. Para evidências duráveis, configure `FIELDOPS_STORAGE_MODE=s3`
+e um bucket privado; o modo `local` é adequado apenas para demonstração controlada.
+
 Sobe um Postgres 16 em `localhost:5433` (banco e usuário `fieldops`; a senha vem de `FIELDOPS_DB_PASSWORD`
 — ver `docker-compose.yml`). As migrações Flyway (`src/main/resources/db/migration`) rodam
 automaticamente na subida da aplicação.
@@ -188,6 +201,9 @@ Com o arquivo `.env` configurado, inicie a API com:
 ```bash
 ./start-api.sh
 ```
+
+O script local ativa o perfil `dev` somente para essa execução. Em produção, use explicitamente
+`SPRING_PROFILES_ACTIVE=prod`; esse perfil não executa o seed de desenvolvimento.
 
 Esse script carrega automaticamente as variáveis do `.env` e executa o `mvn spring-boot:run`.
 

@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fieldops
+      POSTGRES_USER: ${FIELDOPS_DB_USER:-fieldops}
+      POSTGRES_PASSWORD: ${FIELDOPS_DB_PASSWORD:?defina FIELDOPS_DB_PASSWORD no .env}
+    volumes:
+      - fieldops_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      FIELDOPS_DB_URL: jdbc:postgresql://postgres:5432/fieldops
+      FIELDOPS_DB_USER: ${FIELDOPS_DB_USER:-fieldops}
+      FIELDOPS_DB_PASSWORD: ${FIELDOPS_DB_PASSWORD:?defina FIELDOPS_DB_PASSWORD no .env}
+      FIELDOPS_JWT_SECRET: ${FIELDOPS_JWT_SECRET:?defina FIELDOPS_JWT_SECRET no .env}
+      FIELDOPS_CORS_ALLOWED_ORIGINS: ${FIELDOPS_CORS_ALLOWED_ORIGINS:?defina FIELDOPS_CORS_ALLOWED_ORIGINS no .env}
+      FIELDOPS_STORAGE_MODE: ${FIELDOPS_STORAGE_MODE:-local}
+      FIELDOPS_STORAGE_BUCKET: ${FIELDOPS_STORAGE_BUCKET:-}
+      FIELDOPS_MAIL_PROVIDER: ${FIELDOPS_MAIL_PROVIDER:-noop}
+      FIELDOPS_MAIL_FROM: ${FIELDOPS_MAIL_FROM:-}
+      FIELDOPS_PASSWORD_RESET_URL: ${FIELDOPS_PASSWORD_RESET_URL:?defina FIELDOPS_PASSWORD_RESET_URL no .env}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - fieldops_evidence:/app/data/evidence
+
+volumes:
+  fieldops_pgdata:
+  fieldops_evidence:

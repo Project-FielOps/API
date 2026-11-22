@@ -1,11 +1,9 @@
 spring:
   application:
     name: fieldops-api
-  profiles:
-    active: dev
   datasource:
-    url: jdbc:postgresql://localhost:5433/fieldops
-    username: fieldops
+    url: ${FIELDOPS_DB_URL:jdbc:postgresql://localhost:5433/fieldops}
+    username: ${FIELDOPS_DB_USER:fieldops}
     password: ${FIELDOPS_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
