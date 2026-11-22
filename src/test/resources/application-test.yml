@@ -25,7 +25,7 @@ fieldops:
     evidence-dir: ./data/evidence-test
   security:
     cors:
-      allowed-origins: http://localhost:4200
+      allowed-origins: http://localhost:4200,http://localhost:8081,http://localhost:19006
   mail:
     provider: noop
     from: no-reply@test.fieldops.local

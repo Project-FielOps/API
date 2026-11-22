@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -98,6 +99,17 @@ class AuthenticationTest extends IntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Request-ID", "qa-health-7"))
                 .andExpect(jsonPath("$.status").value("UP"));
+    }
+
+    @Test
+    void mobileDevelopmentOriginCanCompleteCorsPreflight() throws Exception {
+        mockMvc.perform(options("/api/v1/clients")
+                        .header("Origin", "http://localhost:8081")
+                        .header("Access-Control-Request-Method", "GET")
+                        .header("Access-Control-Request-Headers", "authorization,content-type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:8081"))
+                .andExpect(header().string("Access-Control-Allow-Credentials", "true"));
     }
 
     @Test
