@@ -25,13 +25,15 @@ public class InspectionResponseController {
     private final InspectionMapper inspectionMapper;
 
     @GetMapping
-    public List<AnswerResponse> list(@PathVariable UUID inspectionId) {
+    public List<AnswerResponse> list(@PathVariable UUID inspectionId,
+                                     @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        inspectionService.getAuthorized(inspectionId, principal.getUser());
         return inspectionService.getAnswersByItemId(inspectionId).values().stream()
                 .map(inspectionMapper::toAnswerResponse).toList();
     }
 
     @PutMapping("/{inspectionItemId}")
-    @PreAuthorize("hasAnyRole('ADMIN','TECHNICIAN')")
+    @PreAuthorize("hasRole('TECHNICIAN')")
     public AnswerResponse upsert(@PathVariable UUID inspectionId, @PathVariable UUID inspectionItemId,
                                   @Valid @RequestBody AnswerUpsertRequest request,
                                   @AuthenticationPrincipal FieldOpsUserDetails principal) {
@@ -42,7 +44,7 @@ public class InspectionResponseController {
     }
 
     @PutMapping
-    @PreAuthorize("hasAnyRole('ADMIN','TECHNICIAN')")
+    @PreAuthorize("hasRole('TECHNICIAN')")
     public List<AnswerResponse> batchUpsert(@PathVariable UUID inspectionId, @Valid @RequestBody BatchAnswerRequest request,
                                              @AuthenticationPrincipal FieldOpsUserDetails principal) {
         return request.answers().stream()

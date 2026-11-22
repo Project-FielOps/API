@@ -8,6 +8,8 @@ import com.fieldops.evidence.mapper.EvidenceMapper;
 import com.fieldops.inspection.application.InspectionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -28,7 +30,7 @@ public class EvidenceController {
     private final InspectionService inspectionService;
 
     @PostMapping(consumes = "multipart/form-data")
-    @PreAuthorize("hasAnyRole('ADMIN','TECHNICIAN')")
+    @PreAuthorize("hasRole('TECHNICIAN')")
     public ResponseEntity<EvidenceResponse> upload(@PathVariable UUID inspectionId,
                                                     @RequestParam(required = false) UUID responseId,
                                                     @RequestParam(required = false) UUID nonConformityId,
@@ -44,19 +46,47 @@ public class EvidenceController {
     }
 
     @GetMapping
-    public List<EvidenceResponse> list(@PathVariable UUID inspectionId) {
+    public List<EvidenceResponse> list(@PathVariable UUID inspectionId,
+                                       @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        inspectionService.getAuthorized(inspectionId, principal.getUser());
         return evidenceService.listByInspection(inspectionId).stream().map(evidenceMapper::toResponse).toList();
     }
 
     @GetMapping("/{evidenceId}")
-    public EvidenceResponse get(@PathVariable UUID inspectionId, @PathVariable UUID evidenceId) {
-        return evidenceMapper.toResponse(evidenceService.getById(evidenceId));
+    public EvidenceResponse get(@PathVariable UUID inspectionId, @PathVariable UUID evidenceId,
+                                @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        var evidence = evidenceService.getById(evidenceId);
+        if (!evidence.getInspection().getId().equals(inspectionId)) {
+            throw com.fieldops.shared.exception.NotFoundException.of("Evidence", evidenceId);
+        }
+        inspectionService.requireReadAccess(evidence.getInspection(), principal.getUser());
+        return evidenceMapper.toResponse(evidence);
+    }
+
+    @GetMapping("/{evidenceId}/content")
+    public ResponseEntity<byte[]> content(@PathVariable UUID inspectionId, @PathVariable UUID evidenceId,
+                                           @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        Evidence evidence = evidenceService.getById(evidenceId);
+        if (!evidence.getInspection().getId().equals(inspectionId)) {
+            throw com.fieldops.shared.exception.NotFoundException.of("Evidence", evidenceId);
+        }
+        inspectionService.requireReadAccess(evidence.getInspection(), principal.getUser());
+        var stored = evidenceService.readContent(evidence);
+        MediaType mediaType = MediaType.parseMediaType(evidence.getMimeType());
+        String filename = evidence.getOriginalFileName() == null ? "evidence" : evidence.getOriginalFileName().replaceAll("[\\r\\n\\\"]", "_");
+        return ResponseEntity.ok().contentType(mediaType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
+                .body(stored.content());
     }
 
     @DeleteMapping("/{evidenceId}")
-    @PreAuthorize("hasAnyRole('ADMIN','TECHNICIAN')")
+    @PreAuthorize("hasRole('TECHNICIAN')")
     public ResponseEntity<Void> delete(@PathVariable UUID inspectionId, @PathVariable UUID evidenceId,
                                         @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        Evidence evidence = evidenceService.getById(evidenceId);
+        if (!evidence.getInspection().getId().equals(inspectionId)) {
+            throw com.fieldops.shared.exception.NotFoundException.of("Evidence", evidenceId);
+        }
         evidenceService.delete(evidenceId, principal.getUser());
         return ResponseEntity.noContent().build();
     }

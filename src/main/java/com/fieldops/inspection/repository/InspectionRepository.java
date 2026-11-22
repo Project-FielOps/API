@@ -6,14 +6,17 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.Query;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import com.fieldops.inspection.domain.Priority;
 
-public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
+public interface InspectionRepository extends JpaRepository<Inspection, UUID>,
+        org.springframework.data.jpa.repository.JpaSpecificationExecutor<Inspection> {
 
     /**
      * InspectionMapper reads client/site/equipment/technician/supervisor/templateVersion names after
@@ -45,15 +48,26 @@ public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
     @EntityGraph(attributePaths = {"client", "site", "equipment", "technician", "supervisor", "templateVersion"})
     Page<Inspection> findByStatus(InspectionStatus status, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"client", "site", "equipment", "technician", "supervisor", "templateVersion"})
+    @Override
+    Page<Inspection> findAll(Specification<Inspection> specification, Pageable pageable);
+
     @Override
     @EntityGraph(attributePaths = {"client", "site", "equipment", "technician", "supervisor", "templateVersion"})
     Page<Inspection> findAll(Pageable pageable);
 
     long countByStatus(InspectionStatus status);
 
+    long countBySupervisorIdAndStatus(UUID supervisorId, InspectionStatus status);
+
     long countByStatusAndScheduledForBefore(InspectionStatus status, Instant before);
 
     long countByStatusInAndScheduledForBefore(List<InspectionStatus> statuses, Instant before);
+
+    Optional<Inspection> findByTitle(String title);
+
+    long countBySupervisorIdAndStatusInAndScheduledForBefore(UUID supervisorId, List<InspectionStatus> statuses,
+                                                              Instant before);
 
     @Query("select i.status as status, count(i) as total from Inspection i group by i.status")
     List<StatusCount> countGroupedByStatus();

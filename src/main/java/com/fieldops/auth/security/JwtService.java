@@ -68,6 +68,7 @@ public class JwtService {
     private String buildToken(FieldOpsUserDetails principal, String type, long ttlMinutes) {
         Instant now = Instant.now();
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(principal.getUsername())
                 .claims(Map.of(CLAIM_ROLE, principal.getUser().getRole().name(), CLAIM_TYPE, type,
                         CLAIM_USER_ID, principal.getUserId().toString()))
@@ -88,6 +89,10 @@ public class JwtService {
     public UUID extractUserId(String token) {
         return UUID.fromString(parseClaims(token).get(CLAIM_USER_ID, String.class));
     }
+
+    public String extractJti(String token) { return parseClaims(token).getId(); }
+
+    public Instant extractExpiration(String token) { return parseClaims(token).getExpiration().toInstant(); }
 
     public boolean isRefreshToken(String token) {
         try {

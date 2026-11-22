@@ -9,6 +9,7 @@ import com.fieldops.inspection.domain.InspectionStatus;
 import com.fieldops.inspection.dto.*;
 import com.fieldops.inspection.mapper.InspectionMapper;
 import com.fieldops.shared.dto.PageResponse;
+import com.fieldops.user.repository.UserRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -30,6 +31,7 @@ public class InspectionController {
     private final InspectionService inspectionService;
     private final InspectionMapper inspectionMapper;
     private final AuditEventRepository auditEventRepository;
+    private final UserRepository userRepository;
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
@@ -45,14 +47,21 @@ public class InspectionController {
                                                           @RequestParam(required = false) UUID clientId,
                                                           @RequestParam(required = false) UUID siteId,
                                                           @RequestParam(required = false) InspectionStatus status,
-                                                          Pageable pageable) {
-        return PageResponse.of(inspectionService.list(technicianId, supervisorId, clientId, siteId, status, pageable)
+                                                          @RequestParam(required = false) com.fieldops.inspection.domain.Priority priority,
+                                                          @RequestParam(required = false) java.time.Instant scheduledFrom,
+                                                          @RequestParam(required = false) java.time.Instant scheduledTo,
+                                                          @RequestParam(defaultValue = "false") boolean overdue,
+                                                          @RequestParam(defaultValue = "false") boolean awaitingReview,
+                                                          Pageable pageable,
+                                                          @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        return PageResponse.of(inspectionService.listForActor(principal.getUser(), technicianId, supervisorId, clientId, siteId,
+                        status, priority, scheduledFrom, scheduledTo, overdue, awaitingReview, pageable)
                 .map(inspectionMapper::toSummary));
     }
 
     @GetMapping("/{id}")
-    public InspectionDetailResponse get(@PathVariable UUID id) {
-        return toDetail(inspectionService.getById(id));
+    public InspectionDetailResponse get(@PathVariable UUID id, @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        return toDetail(inspectionService.getAuthorized(id, principal.getUser()));
     }
 
     @PostMapping("/{id}/assign")
@@ -70,23 +79,33 @@ public class InspectionController {
     }
 
     @PostMapping("/{id}/start")
-    @PreAuthorize("hasAnyRole('ADMIN','TECHNICIAN')")
+    @PreAuthorize("hasRole('TECHNICIAN')")
     public InspectionDetailResponse start(@PathVariable UUID id, @AuthenticationPrincipal FieldOpsUserDetails principal) {
         return toDetail(inspectionService.start(id, principal.getUser()));
     }
 
     @PostMapping("/{id}/submit")
-    @PreAuthorize("hasAnyRole('ADMIN','TECHNICIAN')")
+    @PreAuthorize("hasRole('TECHNICIAN')")
     public InspectionDetailResponse submit(@PathVariable UUID id, @AuthenticationPrincipal FieldOpsUserDetails principal) {
         return toDetail(inspectionService.submit(id, principal.getUser()));
     }
 
+    @PostMapping("/{id}/reopen-correction")
+    @PreAuthorize("hasRole('TECHNICIAN')")
+    public InspectionDetailResponse reopenCorrection(@PathVariable UUID id,
+                                                       @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        return toDetail(inspectionService.reopenCorrection(id, principal.getUser()));
+    }
+
     @GetMapping("/{id}/history")
     @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
-    public List<AuditEventResponse> history(@PathVariable UUID id) {
+    public List<AuditEventResponse> history(@PathVariable UUID id, @AuthenticationPrincipal FieldOpsUserDetails principal) {
+        inspectionService.getAuthorized(id, principal.getUser());
         return auditEventRepository.findByInspectionIdOrderByOccurredAtAsc(id).stream()
                 .map(e -> new AuditEventResponse(e.getId(), e.getInspectionId(), e.getActorId(), e.getAction(), e.getEntityType(),
-                        e.getEntityId(), e.getOccurredAt(), e.getPreviousValueJson(), e.getNewValueJson(), e.getMetadataJson(), e.getRequestId()))
+                        e.getEntityId(), e.getOccurredAt(), e.getPreviousValueJson(), e.getNewValueJson(), e.getMetadataJson(),
+                        e.getActorId() == null ? null : userRepository.findById(e.getActorId()).map(user -> user.getName()).orElse(null),
+                        e.getRequestId()))
                 .toList();
     }
 

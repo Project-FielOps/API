@@ -49,6 +49,11 @@ public class TemplateController {
                 .map(t -> templateMapper.toResponse(t, versionRepository.findByTemplateIdAndPublishedAtIsNull(t.getId()).isPresent())));
     }
 
+    @GetMapping("/categories")
+    public List<String> categories() {
+        return templateService.listCategories();
+    }
+
     @GetMapping("/{id}")
     public TemplateResponse get(@PathVariable UUID id) {
         InspectionTemplate t = templateService.getById(id);

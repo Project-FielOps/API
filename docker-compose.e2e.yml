@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${FIELDOPS_E2E_DB_NAME:-fieldops_e2e}
+      POSTGRES_USER: ${FIELDOPS_E2E_DB_USER:-fieldops_e2e}
+      POSTGRES_PASSWORD: ${FIELDOPS_E2E_DB_PASSWORD:?FIELDOPS_E2E_DB_PASSWORD must be set}
+    ports:
+      - "127.0.0.1:${FIELDOPS_E2E_DB_PORT:-55433}:5432"
+    volumes:
+      - fieldops_e2e_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  fieldops_e2e_pgdata:

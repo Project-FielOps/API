@@ -8,6 +8,7 @@ import com.fieldops.inspection.domain.InspectionResponse;
 import com.fieldops.inspection.repository.InspectionItemSnapshotRepository;
 import com.fieldops.inspection.repository.InspectionResponseRepository;
 import com.fieldops.review.domain.NonConformity;
+import com.fieldops.review.domain.NonConformitySeverity;
 import com.fieldops.review.domain.NonConformityStatus;
 import com.fieldops.review.dto.CreateNonConformityRequest;
 import com.fieldops.review.dto.UpdateNonConformityRequest;
@@ -15,9 +16,14 @@ import com.fieldops.review.repository.NonConformityRepository;
 import com.fieldops.shared.exception.BusinessRuleException;
 import com.fieldops.shared.exception.NotFoundException;
 import com.fieldops.user.domain.User;
+import com.fieldops.user.domain.Role;
+import com.fieldops.shared.exception.ForbiddenOperationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.time.Instant;
 import java.util.List;
@@ -36,6 +42,15 @@ public class NonConformityService {
 
     public NonConformity create(UUID inspectionId, CreateNonConformityRequest request, User actor) {
         Inspection inspection = inspectionService.getById(inspectionId);
+        inspectionService.requireReadAccess(inspection, actor);
+        if (inspection.getStatus() == com.fieldops.inspection.domain.InspectionStatus.APPROVED
+                || inspection.getStatus() == com.fieldops.inspection.domain.InspectionStatus.CANCELED) {
+            throw new BusinessRuleException("INSPECTION_LOCKED", "Non-conformities cannot be changed in the current inspection state");
+        }
+        if (request.severity() == com.fieldops.review.domain.NonConformitySeverity.CRITICAL
+                && (request.description() == null || request.description().isBlank())) {
+            throw new BusinessRuleException("DESCRIPTION_REQUIRED", "Critical non-conformities require a description");
+        }
         InspectionItemSnapshot item = null;
         if (request.inspectionItemId() != null) {
             item = snapshotRepository.findById(request.inspectionItemId())
@@ -74,12 +89,58 @@ public class NonConformityService {
     }
 
     @Transactional(readOnly = true)
+    public List<NonConformity> listByInspection(UUID inspectionId, User actor) {
+        Inspection inspection = inspectionService.getAuthorized(inspectionId, actor);
+        return nonConformityRepository.findByInspectionId(inspection.getId());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<NonConformity> listForActor(User actor, UUID inspectionId, NonConformitySeverity severity,
+                                            NonConformityStatus status, Pageable pageable) {
+        if (actor.getRole() != Role.ADMIN && actor.getRole() != Role.SUPERVISOR
+                && actor.getRole() != Role.TECHNICIAN) {
+            throw new ForbiddenOperationException("You do not have access to non-conformities");
+        }
+
+        Specification<NonConformity> specification = (root, query, criteriaBuilder) -> {
+            var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+            if (inspectionId != null) {
+                predicates.add(criteriaBuilder.equal(root.get("inspection").get("id"), inspectionId));
+            }
+            if (severity != null) {
+                predicates.add(criteriaBuilder.equal(root.get("severity"), severity));
+            }
+            if (status != null) {
+                predicates.add(criteriaBuilder.equal(root.get("status"), status));
+            }
+            if (actor.getRole() == Role.SUPERVISOR) {
+                predicates.add(criteriaBuilder.equal(root.get("inspection").get("supervisor").get("id"), actor.getId()));
+            }
+            if (actor.getRole() == Role.TECHNICIAN) {
+                predicates.add(criteriaBuilder.equal(root.get("inspection").get("technician").get("id"), actor.getId()));
+            }
+            return criteriaBuilder.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+        return nonConformityRepository.findAll(specification, pageable);
+    }
+
+    @Transactional(readOnly = true)
     public NonConformity getById(UUID id) {
         return nonConformityRepository.findById(id).orElseThrow(() -> NotFoundException.of("NonConformity", id));
     }
 
-    public NonConformity update(UUID id, UpdateNonConformityRequest request) {
+    public void requireReadAccess(NonConformity nc, User actor) {
+        inspectionService.requireReadAccess(nc.getInspection(), actor);
+    }
+
+    public NonConformity update(UUID id, UpdateNonConformityRequest request, User actor) {
         NonConformity nc = getById(id);
+        requireReadAccess(nc, actor);
+        ensureMutable(nc);
+        if (request.severity() == com.fieldops.review.domain.NonConformitySeverity.CRITICAL
+                && (request.description() == null || request.description().isBlank())) {
+            throw new BusinessRuleException("DESCRIPTION_REQUIRED", "Critical non-conformities require a description");
+        }
         nc.setTitle(request.title());
         nc.setDescription(request.description());
         nc.setSeverity(request.severity());
@@ -88,9 +149,21 @@ public class NonConformityService {
 
     public NonConformity updateStatus(UUID id, NonConformityStatus status, User actor) {
         NonConformity nc = getById(id);
+        requireReadAccess(nc, actor);
+        if (actor.getRole() != Role.SUPERVISOR || !nc.getInspection().getSupervisor().getId().equals(actor.getId())) {
+            throw new ForbiddenOperationException("Only the assigned supervisor can change non-conformity status");
+        }
+        ensureMutable(nc);
         nc.setStatus(status);
         nc = nonConformityRepository.save(nc);
         auditService.record(nc.getInspection().getId(), actor.getId(), "NON_CONFORMITY_STATUS_CHANGED", "NonConformity", nc.getId());
         return nc;
+    }
+
+    private void ensureMutable(NonConformity nc) {
+        if (nc.getInspection().getStatus() == com.fieldops.inspection.domain.InspectionStatus.APPROVED
+                || nc.getInspection().getStatus() == com.fieldops.inspection.domain.InspectionStatus.CANCELED) {
+            throw new BusinessRuleException("INSPECTION_LOCKED", "Non-conformities on this inspection are immutable");
+        }
     }
 }

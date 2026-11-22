@@ -14,6 +14,7 @@ public record AuditEventResponse(
         String previousValueJson,
         String newValueJson,
         String metadataJson,
+        String actorName,
         String requestId
 ) {
 }

@@ -11,6 +11,7 @@ public record CreateUserRequest(
         @NotBlank(message = "email is required") @Email(message = "email must be valid") String email,
         @NotBlank(message = "password is required") @Size(min = 8, message = "password must be at least 8 characters") String password,
         @NotNull(message = "role is required") Role role,
-        String phone
+        String phone,
+        boolean temporaryPassword
 ) {
 }

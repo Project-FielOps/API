@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
+import org.slf4j.MDC;
 
 /**
  * Standard error response body used by every error path in the API.
@@ -28,16 +30,22 @@ public record ApiError(
         String code,
         String message,
         String path,
-        List<FieldError> details
+        String requestId,
+        List<FieldError> fieldErrors
 ) {
     public record FieldError(String field, String message) {
     }
 
     public static ApiError of(int status, String error, String code, String message, String path) {
-        return new ApiError(Instant.now(), status, error, code, message, path, null);
+        return new ApiError(Instant.now(), status, error, code, message, path, currentRequestId(), null);
     }
 
     public static ApiError of(int status, String error, String code, String message, String path, List<FieldError> details) {
-        return new ApiError(Instant.now(), status, error, code, message, path, details);
+        return new ApiError(Instant.now(), status, error, code, message, path, currentRequestId(), details);
+    }
+
+    private static String currentRequestId() {
+        String requestId = MDC.get("requestId");
+        return requestId == null ? UUID.randomUUID().toString() : requestId;
     }
 }
