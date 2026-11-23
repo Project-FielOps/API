@@ -38,7 +38,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     volumes:
       - fieldops_evidence:/app/data/evidence
 
