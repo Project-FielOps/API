@@ -41,6 +41,24 @@ public class NonConformityService {
     private final AuditService auditService;
 
     public NonConformity create(UUID inspectionId, CreateNonConformityRequest request, User actor) {
+        return create(inspectionId, request, actor, null);
+    }
+
+    /**
+     * Criação vinda do aparelho. O {@code clientOperationId} torna a operação idempotente: o
+     * reenvio devolve a NC já criada. Offline o aparelho ainda não conhece o id da resposta,
+     * então a NC é ligada à resposta do item informado quando ela já existe no servidor.
+     */
+    public NonConformity create(UUID inspectionId, CreateNonConformityRequest request, User actor, UUID clientOperationId) {
+        if (clientOperationId != null) {
+            var existing = nonConformityRepository.findByCreatedByIdAndClientOperationId(actor.getId(), clientOperationId);
+            if (existing.isPresent()) {
+                if (!existing.get().getInspection().getId().equals(inspectionId)) {
+                    throw new BusinessRuleException("OPERATION_ID_REUSED", "operationId already used for another inspection");
+                }
+                return existing.get();
+            }
+        }
         Inspection inspection = inspectionService.getById(inspectionId);
         inspectionService.requireReadAccess(inspection, actor);
         if (inspection.getStatus() == com.fieldops.inspection.domain.InspectionStatus.APPROVED
@@ -66,8 +84,11 @@ public class NonConformityService {
             if (!response.getInspection().getId().equals(inspectionId)) {
                 throw new BusinessRuleException("RESPONSE_INSPECTION_MISMATCH", "The response does not belong to this inspection");
             }
+        } else if (clientOperationId != null && item != null) {
+            response = responseRepository.findByInspectionItemId(item.getId()).orElse(null);
         }
         NonConformity nc = new NonConformity();
+        nc.setClientOperationId(clientOperationId);
         nc.setInspection(inspection);
         nc.setInspectionItem(item);
         nc.setResponse(response);

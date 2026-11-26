@@ -6,6 +6,7 @@ import com.fieldops.inspection.domain.InspectionResponse;
 import com.fieldops.shared.domain.BaseEntity;
 import com.fieldops.user.domain.User;
 import jakarta.persistence.*;
+import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -52,4 +53,8 @@ public class NonConformity extends BaseEntity {
     private Instant createdAtDevice;
 
     private Instant serverReceivedAt;
+
+    /** operationId gerado no aparelho; torna a criação offline idempotente. */
+    @Column(name = "client_operation_id")
+    private UUID clientOperationId;
 }

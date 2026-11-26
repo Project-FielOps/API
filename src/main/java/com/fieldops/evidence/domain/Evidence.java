@@ -60,4 +60,8 @@ public class Evidence extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
+
+    /** operationId gerado no aparelho; torna o upload offline idempotente. */
+    @Column(name = "client_operation_id")
+    private UUID clientOperationId;
 }
