@@ -15,6 +15,9 @@ services:
       retries: 12
 
   api:
+    # O deploy compila a imagem no GitHub Actions e carrega na EC2 com esta tag
+    # (`up --no-build`). O build local continua possível com `up --build`.
+    image: fieldops-api:prod
     build:
       context: .
     restart: unless-stopped

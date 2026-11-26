@@ -11,27 +11,74 @@ permissions:
 
 concurrency:
   group: deploy-api-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy API
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # A EC2 já roda a API e o PostgreSQL; compilar com Maven lá dentro esgota memória/CPU e
+      # trava o deploy. A imagem é compilada aqui e só a imagem pronta vai para a EC2.
+      - name: Build image on the runner
+        run: |
+          docker build --tag fieldops-api:prod .
+          docker save fieldops-api:prod | gzip -1 > fieldops-api-image.tar.gz
+          ls -lh fieldops-api-image.tar.gz
+
+      - name: Diagnose EC2 before deploy
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 3m
+          script: |
+            uptime
+            free -m
+            df -h /
+            sudo docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+            for c in $(sudo docker ps -a --format '{{.Names}}' | grep -i api); do echo "--- logs $c"; sudo docker logs --tail 40 "$c" 2>&1; done
+            pgrep -af 'docker-compose|mvn|buildkit' || true
+
+      - name: Copy image to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: fieldops-api-image.tar.gz
+          target: /home/ec2-user/fieldops
+          timeout: 120s
+          command_timeout: 15m
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 12m
           script_stop: true
           script: |
             set -e
             cd /home/ec2-user/fieldops/API
             git fetch origin main
             git reset --hard origin/main
-            sudo docker-compose -f docker-compose.prod.yml up -d --build
-            sleep 20
+            # Builds antigos que ficaram rodando na EC2 só competem por memória.
+            sudo pkill -f 'mvn -B -Dmaven.test.skip=true package' || true
+            gunzip -c ../fieldops-api-image.tar.gz | sudo docker load
+            sudo docker-compose -f docker-compose.prod.yml up -d --no-build
+            rm -f ../fieldops-api-image.tar.gz
+            for i in $(seq 1 36); do
+              if curl --fail --silent http://127.0.0.1:8080/actuator/health >/dev/null; then echo "API saudável"; break; fi
+              if [ "$i" = 36 ]; then sudo docker-compose -f docker-compose.prod.yml logs --tail 80 api; exit 1; fi
+              sleep 5
+            done
             sudo docker-compose -f docker-compose.prod.yml ps
             curl --fail --silent --show-error http://127.0.0.1:8080/swagger-ui.html >/dev/null
+            sudo docker image prune -f >/dev/null || true
