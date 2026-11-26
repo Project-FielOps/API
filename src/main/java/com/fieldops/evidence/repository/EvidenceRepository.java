@@ -18,5 +18,7 @@ public interface EvidenceRepository extends JpaRepository<Evidence, UUID> {
 
     List<Evidence> findByNonConformityId(UUID nonConformityId);
 
+    Optional<Evidence> findByCreatedByIdAndClientOperationId(UUID createdById, UUID clientOperationId);
+
     long countByInspectionId(UUID inspectionId);
 }

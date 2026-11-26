@@ -33,14 +33,23 @@ public class EvidenceController {
     @PreAuthorize("hasRole('TECHNICIAN')")
     public ResponseEntity<EvidenceResponse> upload(@PathVariable UUID inspectionId,
                                                     @RequestParam(required = false) UUID responseId,
+                                                    @RequestParam(required = false) UUID inspectionItemId,
                                                     @RequestParam(required = false) UUID nonConformityId,
+                                                    @RequestParam(required = false) UUID nonConformityOperationId,
+                                                    @RequestParam(required = false) UUID operationId,
                                                     @RequestParam(required = false) String description,
                                                     @RequestParam(required = false) BigDecimal latitude,
                                                     @RequestParam(required = false) BigDecimal longitude,
                                                     @RequestParam("file") MultipartFile file,
                                                     @AuthenticationPrincipal FieldOpsUserDetails principal) {
-        Evidence evidence = evidenceService.upload(inspectionService.getById(inspectionId), responseId, nonConformityId,
-                description, latitude, longitude, file, principal.getUser());
+        EvidenceService.UploadResult result = evidenceService.upload(inspectionService.getById(inspectionId), responseId,
+                inspectionItemId, nonConformityId, nonConformityOperationId, description, latitude, longitude, file,
+                principal.getUser(), operationId);
+        Evidence evidence = result.evidence();
+        if (!result.created()) {
+            // Reenvio do mesmo operationId: devolve a evidência já registrada, sem duplicar.
+            return ResponseEntity.ok(evidenceMapper.toResponse(evidence));
+        }
         return ResponseEntity.created(URI.create("/api/v1/inspections/" + inspectionId + "/evidence/" + evidence.getId()))
                 .body(evidenceMapper.toResponse(evidence));
     }

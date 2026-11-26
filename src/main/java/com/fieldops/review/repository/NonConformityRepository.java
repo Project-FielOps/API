@@ -15,6 +15,8 @@ import java.util.UUID;
 public interface NonConformityRepository extends JpaRepository<NonConformity, UUID>, JpaSpecificationExecutor<NonConformity> {
     List<NonConformity> findByInspectionId(UUID inspectionId);
 
+    java.util.Optional<NonConformity> findByCreatedByIdAndClientOperationId(UUID createdById, UUID clientOperationId);
+
     @Override
     @EntityGraph(attributePaths = {"inspection", "createdBy"})
     Page<NonConformity> findAll(Specification<NonConformity> specification, Pageable pageable);
