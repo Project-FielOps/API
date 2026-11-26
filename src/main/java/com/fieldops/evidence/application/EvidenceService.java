@@ -48,6 +48,58 @@ public class EvidenceService {
 
     public Evidence upload(Inspection inspection, UUID responseId, UUID nonConformityId, String description,
                             BigDecimal latitude, BigDecimal longitude, MultipartFile file, User actor) {
+        return store(inspection, responseId, nonConformityId, description, latitude, longitude, file, actor, null);
+    }
+
+    /** Resultado do upload idempotente: {@code created = false} quando o operationId já tinha sido recebido. */
+    public record UploadResult(Evidence evidence, boolean created) {}
+
+    /**
+     * Upload vindo do aparelho, possivelmente gravado offline.
+     *
+     * <p>O {@code clientOperationId} garante que o reenvio (resposta perdida na rede, app reiniciado)
+     * devolva a mesma evidência em vez de duplicá-la — inclusive depois que a inspeção foi enviada.
+     * Como o aparelho não conhece os ids gerados pelo servidor, a evidência pode ser vinculada pelo
+     * item do checklist ({@code inspectionItemId}) ou pela NC criada offline
+     * ({@code nonConformityOperationId}).
+     */
+    public UploadResult upload(Inspection inspection, UUID responseId, UUID inspectionItemId, UUID nonConformityId,
+                               UUID nonConformityOperationId, String description, BigDecimal latitude,
+                               BigDecimal longitude, MultipartFile file, User actor, UUID clientOperationId) {
+        if (clientOperationId != null) {
+            var existing = evidenceRepository.findByCreatedByIdAndClientOperationId(actor.getId(), clientOperationId);
+            if (existing.isPresent()) {
+                if (!existing.get().getInspection().getId().equals(inspection.getId())) {
+                    throw new BusinessRuleException("OPERATION_ID_REUSED", "operationId already used for another inspection");
+                }
+                return new UploadResult(existing.get(), false);
+            }
+        }
+        UUID resolvedResponseId = responseId;
+        if (resolvedResponseId == null && inspectionItemId != null) {
+            InspectionResponse response = responseRepository.findByInspectionItemId(inspectionItemId).orElse(null);
+            if (response != null) {
+                if (!response.getInspection().getId().equals(inspection.getId())) {
+                    throw new BusinessRuleException("ITEM_INSPECTION_MISMATCH", "The item does not belong to this inspection");
+                }
+                resolvedResponseId = response.getId();
+            }
+        }
+        UUID resolvedNonConformityId = nonConformityId;
+        if (resolvedNonConformityId == null && nonConformityOperationId != null) {
+            resolvedNonConformityId = nonConformityRepository
+                    .findByCreatedByIdAndClientOperationId(actor.getId(), nonConformityOperationId)
+                    .map(NonConformity::getId)
+                    .orElseThrow(() -> NotFoundException.of("NonConformity", nonConformityOperationId));
+        }
+        Evidence evidence = store(inspection, resolvedResponseId, resolvedNonConformityId, description, latitude,
+                longitude, file, actor, clientOperationId);
+        return new UploadResult(evidence, true);
+    }
+
+    private Evidence store(Inspection inspection, UUID responseId, UUID nonConformityId, String description,
+                           BigDecimal latitude, BigDecimal longitude, MultipartFile file, User actor,
+                           UUID clientOperationId) {
         if (!EDITABLE_STATUSES.contains(inspection.getStatus())) {
             throw new BusinessRuleException("INSPECTION_LOCKED",
                     "Evidence can only be added while the inspection is IN_PROGRESS");
@@ -101,6 +153,7 @@ public class EvidenceService {
         evidence.setServerReceivedAt(Instant.now());
         evidence.setUploadedAt(Instant.now());
         evidence.setCreatedBy(actor);
+        evidence.setClientOperationId(clientOperationId);
         try {
             evidence = evidenceRepository.save(evidence);
             auditService.record(inspection.getId(), actor.getId(), "EVIDENCE_ADDED", "Evidence", evidence.getId());

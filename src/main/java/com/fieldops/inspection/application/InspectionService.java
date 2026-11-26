@@ -35,6 +35,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -63,6 +64,12 @@ public class InspectionService {
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
     private final NonConformityRepository nonConformityRepository;
+    private final ApplicationEventPublisher events;
+
+    private void publish(Inspection inspection, String event) {
+        events.publishEvent(new InspectionChangedEvent(inspection.getId(), inspection.getTechnician().getId(),
+                inspection.getStatus(), event));
+    }
 
     public Inspection create(CreateInspectionRequest request, User creator) {
         Client client = clientService.getById(request.clientId());
@@ -129,6 +136,7 @@ public class InspectionService {
 
         auditService.record(inspection.getId(), creator.getId(), "INSPECTION_CREATED", "Inspection", inspection.getId());
         auditService.record(inspection.getId(), creator.getId(), "INSPECTION_ASSIGNED", "Inspection", inspection.getId());
+        publish(inspection, "ASSIGNED");
         return inspection;
     }
 
@@ -275,10 +283,16 @@ public class InspectionService {
         if (supervisor.getRole() != Role.SUPERVISOR || supervisor.getStatus() != UserStatus.ACTIVE) {
             throw new BusinessRuleException("INVALID_SUPERVISOR", "supervisorId must reference an active user with role SUPERVISOR");
         }
+        UUID previousTechnicianId = inspection.getTechnician().getId();
         inspection.setTechnician(technician);
         inspection.setSupervisor(supervisor);
         inspection = inspectionRepository.save(inspection);
         auditService.record(inspection.getId(), actor.getId(), "INSPECTION_ASSIGNED", "Inspection", inspection.getId());
+        if (!previousTechnicianId.equals(technician.getId())) {
+            events.publishEvent(new InspectionChangedEvent(inspection.getId(), previousTechnicianId,
+                    inspection.getStatus(), "UNASSIGNED"));
+        }
+        publish(inspection, "ASSIGNED");
         return inspection;
     }
 
@@ -293,6 +307,7 @@ public class InspectionService {
         inspection.setCanceledReason(reason);
         inspection = inspectionRepository.save(inspection);
         auditService.record(inspection.getId(), actor.getId(), "INSPECTION_CANCELED", "Inspection", inspection.getId());
+        publish(inspection, "CANCELED");
         return inspection;
     }
 
@@ -304,6 +319,7 @@ public class InspectionService {
         inspection.setStartedAtServer(Instant.now());
         inspection = inspectionRepository.save(inspection);
         auditService.record(inspection.getId(), actor.getId(), "INSPECTION_STARTED", "Inspection", inspection.getId());
+        publish(inspection, "STARTED");
         return inspection;
     }
 
@@ -318,6 +334,7 @@ public class InspectionService {
         inspection.setSubmittedAtServer(Instant.now());
         inspection = inspectionRepository.save(inspection);
         auditService.record(inspection.getId(), actor.getId(), "INSPECTION_SUBMITTED", "Inspection", inspection.getId());
+        publish(inspection, "SUBMITTED");
         return inspection;
     }
 
@@ -328,6 +345,7 @@ public class InspectionService {
         inspection.setStatus(InspectionStatus.IN_PROGRESS);
         inspection = inspectionRepository.save(inspection);
         auditService.record(inspection.getId(), actor.getId(), "INSPECTION_REOPENED_FOR_CORRECTION", "Inspection", inspection.getId());
+        publish(inspection, "REOPENED_FOR_CORRECTION");
         return inspection;
     }
 
@@ -464,6 +482,7 @@ public class InspectionService {
         inspection.setStatus(InspectionStatus.UNDER_REVIEW);
         inspection = inspectionRepository.save(inspection);
         auditService.record(inspection.getId(), actor.getId(), "REVIEW_STARTED", "Inspection", inspection.getId());
+        publish(inspection, "UNDER_REVIEW");
         return inspection;
     }
 
@@ -475,6 +494,7 @@ public class InspectionService {
         inspection.setApprovedAt(Instant.now());
         inspection = inspectionRepository.save(inspection);
         auditService.record(inspection.getId(), actor.getId(), "INSPECTION_APPROVED", "Inspection", inspection.getId());
+        publish(inspection, "APPROVED");
         return inspection;
     }
 
@@ -485,6 +505,7 @@ public class InspectionService {
         inspection.setStatus(InspectionStatus.REJECTED);
         inspection = inspectionRepository.save(inspection);
         auditService.record(inspection.getId(), actor.getId(), "INSPECTION_REJECTED", "Inspection", inspection.getId());
+        publish(inspection, "REJECTED");
         return inspection;
     }
 

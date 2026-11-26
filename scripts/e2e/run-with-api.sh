@@ -77,6 +77,8 @@ cd "$API_DIR"
 if [[ "$RESET" == true ]]; then
     compose down --volumes --remove-orphans
 fi
+# setsid isola o grupo de processos no Linux; no macOS ele não existe e não é necessário.
+SETSID="$(command -v setsid || true)"
 compose up --detach --wait postgres
 
 FIELDOPS_E2E_DB_URL="$FIELDOPS_E2E_DB_URL" \
@@ -85,7 +87,7 @@ FIELDOPS_E2E_SEED_PASSWORD="$FIELDOPS_E2E_SEED_PASSWORD" \
 FIELDOPS_E2E_PASSWORD="$FIELDOPS_E2E_PASSWORD" \
 FIELDOPS_E2E_JWT_SECRET="$FIELDOPS_E2E_JWT_SECRET" \
 FIELDOPS_E2E_API_PORT="$FIELDOPS_E2E_API_PORT" \
-  setsid mvn -DskipTests spring-boot:run -Dspring-boot.run.profiles=e2e >"$API_LOG" 2>&1 &
+  ${SETSID} mvn -DskipTests spring-boot:run -Dspring-boot.run.profiles=e2e >"$API_LOG" 2>&1 &
 API_PID=$!
 
 for attempt in $(seq 1 120); do
